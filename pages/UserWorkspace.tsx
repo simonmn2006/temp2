@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Refrigerator, Menu, Assignment, Reading, TranslationSet, RefrigeratorType, CookingMethod, Facility, Checkpoint, FacilityException, Alert, FormResponse, FacilityType } from '../types';
 
@@ -17,7 +16,7 @@ interface UserWorkspaceProps {
   menus: Menu[];
   assignments: Assignment[];
   readings: Reading[];
-  onSave: (reading: Reading) => void;
+  onSave: (reading: Reading, alert?: Alert) => void;
   fridgeTypes: RefrigeratorType[];
   cookingMethods: CookingMethod[];
   facilities: Facility[];
@@ -47,10 +46,9 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
     return `${y}-${m}-${d}`;
   }, [now]);
 
-  // Check if today is a weekend (Saturday or Sunday)
   const isWeekend = useMemo(() => {
     const day = now.getDay();
-    return day === 0 || day === 6; // 0 = Sunday, 6 = Saturday
+    return day === 0 || day === 6; 
   }, [now]);
 
   const myFacility = useMemo(() => facilities.find(f => f.id === user.facilityId), [facilities, user.facilityId]);
@@ -64,51 +62,35 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
   }, [excludedFacilities, user.facilityId, todayStr]);
 
   const groupedActiveItems = useMemo(() => {
-    // If location is excluded or if it is a weekend, no refrigerator logging is assigned.
     if (!user || !user.facilityId || activeExclusion) return [];
     
-    // REFRIGERATORS: Strictly follow no weekends + facility link
     const assignedFridges = isWeekend ? [] : (fridges || []).filter(f => f.facilityId === user.facilityId);
     
-    // MENUS: Follow assignment logic (skipWeekend flag)
     const assignedMenuIds = (assignments || [])
       .filter(a => {
         if (a.resourceType !== 'menu') return false;
-        
         const isUserMatch = a.targetType === 'user' && a.targetId === user.id;
         const isFacMatch = a.targetType === 'facility' && a.targetId === user.facilityId;
         const isTypeMatch = a.targetType === 'facilityType' && a.targetId === myFacility?.typeId;
-        
         if (!(isUserMatch || isFacMatch || isTypeMatch)) return false;
-
         const isActive = todayStr >= a.startDate && todayStr <= a.endDate;
         const isSkippedWeekend = a.skipWeekend && isWeekend;
-        
         return isActive && !isSkippedWeekend;
       })
       .map(a => a.resourceId);
 
     const groups: Record<string, GroupedItem> = {};
 
-    // Process Refrigerators
     assignedFridges.forEach(f => {
       const type = fridgeTypes.find(t => t.name === f.typeName);
       const cps = type?.checkpoints || [{ name: 'Temperatur', minTemp: 2, maxTemp: 7 }];
       const activeCps = cps.filter(cp => !(readings || []).some(r => r.targetId === f.id && r.checkpointName === cp.name && r.timestamp.startsWith(todayStr)))
         .map(cp => ({ ...cp, uniqueKey: `fridge-${f.id}-${cp.name}` }));
-      
       if (activeCps.length > 0) {
-        groups[f.id] = { 
-          id: f.id, 
-          name: f.name, 
-          type: 'refrigerator', 
-          checkpoints: activeCps, 
-          colorClass: 'border-slate-400 bg-slate-100 text-slate-700' 
-        };
+        groups[f.id] = { id: f.id, name: f.name, type: 'refrigerator', checkpoints: activeCps, colorClass: 'border-slate-400 bg-slate-100 text-slate-700' };
       }
     });
 
-    // Process Menus
     assignedMenuIds.forEach(mId => {
       const menu = menus.find(m => m.id === mId);
       if (!menu) return;
@@ -116,15 +98,8 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
       const cps = method?.checkpoints || [{ name: 'Kern-Temperatur', minTemp: 72, maxTemp: 95 }];
       const activeCps = cps.filter(cp => !(readings || []).some(r => r.targetId === menu.id && r.checkpointName === cp.name && r.timestamp.startsWith(todayStr)))
         .map(cp => ({ ...cp, uniqueKey: `menu-${menu.id}-${cp.name}` }));
-      
       if (activeCps.length > 0) {
-        groups[menu.id] = { 
-          id: menu.id, 
-          name: menu.name, 
-          type: 'menu', 
-          checkpoints: activeCps, 
-          colorClass: 'border-blue-500 bg-blue-50 text-blue-700' 
-        };
+        groups[menu.id] = { id: menu.id, name: menu.name, type: 'menu', checkpoints: activeCps, colorClass: 'border-blue-500 bg-blue-50 text-blue-700' };
       }
     });
     
@@ -164,10 +139,10 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
         reason: isOutOfRange ? reason : undefined
       };
       
-      onSave(reading);
+      let violationAlert: Alert | undefined = undefined;
 
       if (isOutOfRange) {
-        const violationAlert: Alert = {
+        violationAlert = {
           id: `ALRT-${Date.now()}`,
           facilityId: user.facilityId || 'UNKNOWN',
           facilityName: myFacility?.name || 'Unbekannter Standort',
@@ -181,8 +156,9 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
           userName: user.name,
           resolved: false
         };
-        onViolation(violationAlert);
       }
+
+      onSave(reading, violationAlert);
 
       setLockingIds(prev => { 
         const n = new Set(prev); 
@@ -197,11 +173,8 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
     const myResponses = formResponses.filter(r => r.userId === user.id);
     const menuDays = new Set(myReadings.filter(r => r.targetType === 'menu').map(r => r.timestamp.split('T')[0])).size;
     const fridgeDays = new Set(myReadings.filter(r => r.targetType === 'refrigerator').map(r => r.timestamp.split('T')[0])).size;
-    const fridgePages = Math.ceil(fridgeDays / 5);
-    const formPages = (myResponses || []).length;
-    const totalA4 = menuDays + fridgePages + formPages;
-    const tonerSaved = (totalA4 / 1500).toFixed(4);
-    return { totalA4, tonerSaved };
+    const totalA4 = menuDays + Math.ceil(fridgeDays / 5) + (myResponses || []).length;
+    return { totalA4, tonerSaved: (totalA4 / 1500).toFixed(4) };
   }, [readings, formResponses, user.id]);
 
   return (
@@ -282,14 +255,12 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
                             >
                               -
                             </button>
-                            
                             <input 
                               type="text" 
                               value={draftTemps[cp.uniqueKey] ?? cp.minTemp} 
                               onChange={e => setDraftTemps({...draftTemps, [cp.uniqueKey]: e.target.value})}
                               className={`w-48 text-center bg-transparent border-none font-black text-6xl font-mono outline-none tracking-tighter ${isOutOfRange ? 'text-rose-600 animate-pulse' : 'text-slate-900 dark:text-white'}`}
                             />
-                            
                             <button 
                               onClick={() => updateTemp(cp.uniqueKey, 0.5, parseFloat(cp.minTemp))}
                               className="w-20 h-20 flex items-center justify-center rounded-[1.5rem] bg-slate-50 dark:bg-slate-900 text-blue-600 font-black text-4xl hover:bg-blue-100 transition-colors shadow-sm"
@@ -297,7 +268,6 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
                               +
                             </button>
                           </div>
-
                           <button 
                             onClick={() => lockReading(group, cp)} 
                             disabled={isOutOfRange && !(draftReasons[cp.uniqueKey]?.trim())}
@@ -307,7 +277,6 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({
                           </button>
                         </div>
                       </div>
-
                       {isOutOfRange && (
                          <div className="animate-in slide-in-from-top-4 duration-500 pt-6">
                             <div className="flex items-center space-x-2 mb-4 px-2">

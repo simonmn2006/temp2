@@ -1,8 +1,8 @@
-
 import express from 'express';
 import mariadb from 'mariadb';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -10,7 +10,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Database connection pool configuration
 const pool = mariadb.createPool({
      host: process.env.DB_HOST || 'localhost', 
      user: process.env.DB_USER || 'root', 
@@ -20,7 +19,6 @@ const pool = mariadb.createPool({
      acquireTimeout: 10000
 });
 
-// Helper to handle queries with improved error logging
 async function query(sql, params) {
     let conn;
     try {
@@ -34,24 +32,74 @@ async function query(sql, params) {
     }
 }
 
-// --- NEW: Root Route for Status Check ---
+// Helper to send email
+async function sendAlertEmail(config, recipient, alertDetails) {
+    const transporter = nodemailer.createTransport({
+        host: config.host,
+        port: parseInt(config.port),
+        secure: config.secure, // true for 465, false for other ports
+        auth: {
+            user: config.user,
+            pass: config.pass
+        }
+    });
+
+    const html = `
+        <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
+            <h2 style="color: #e11d48;">⚠️ HACCP Temperatur Alarm</h2>
+            <p>Es wurde eine Grenzwertüberschreitung festgestellt:</p>
+            <div style="background: #fff1f2; padding: 15px; border-radius: 10px; border: 1px solid #fecdd3;">
+                <p><b>Standort:</b> ${alertDetails.facilityName}</p>
+                <p><b>Gerät/Menü:</b> ${alertDetails.targetName} (${alertDetails.checkpointName})</p>
+                <p><b>Messwert:</b> <span style="color: #e11d48; font-size: 1.2em;">${alertDetails.value}°C</span></p>
+                <p><b>Limit:</b> ${alertDetails.min}°C bis ${alertDetails.max}°C</p>
+                <p><b>Zeitpunkt:</b> ${new Date(alertDetails.timestamp).toLocaleString('de-DE')}</p>
+                <p><b>Erfasst von:</b> ${alertDetails.userName}</p>
+                <p><b>Grund:</b> ${alertDetails.reason || 'Keine Angabe'}</p>
+            </div>
+            <p style="margin-top: 20px; font-size: 0.8em; color: #64748b;">Gourmetta HACCP Zentrale - Automatisches Benachrichtigungssystem</p>
+        </div>
+    `;
+
+    return await transporter.sendMail({
+        from: config.from || config.user,
+        to: recipient,
+        subject: `⚠️ Alarm: ${alertDetails.facilityName} - ${alertDetails.targetName}`,
+        html: html
+    });
+}
+
 app.get('/', (req, res) => {
     res.send(`
         <div style="font-family: sans-serif; padding: 50px; text-align: center; background: #f8fafc; min-height: 100vh;">
             <h1 style="color: #2563eb;">🚀 Gourmetta API Server is RUNNING</h1>
-            <p style="color: #64748b; font-size: 1.1rem;">This is the <b>Backend (Port 3001)</b>. It handles your MariaDB database.</p>
-            <div style="margin-top: 30px; padding: 20px; background: white; border-radius: 20px; display: inline-block; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
-                <p style="font-weight: bold; margin-bottom: 10px;">To use the application:</p>
-                <a href="http://localhost:3000" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 12px; font-weight: bold; display: inline-block;">Open http://localhost:3000</a>
-            </div>
-            <p style="margin-top: 30px; font-size: 0.8rem; color: #94a3b8;">Database: ${process.env.DB_NAME || 'gourmetta_haccp'} | Host: ${process.env.DB_HOST || 'localhost'}</p>
+            <p style="color: #64748b; font-size: 1.1rem;">Backend is Active with SMTP Support.</p>
         </div>
     `);
 });
 
-// --- API ENDPOINTS ---
+// Test Email Endpoint
+app.post('/api/test-email', async (req, res) => {
+    const { host, port, user, pass, from, secure } = req.body;
+    try {
+        const transporter = nodemailer.createTransport({
+            host, port: parseInt(port), secure,
+            auth: { user, pass }
+        });
+        await transporter.verify();
+        await transporter.sendMail({
+            from: from || user,
+            to: user,
+            subject: "Gourmetta SMTP Test",
+            text: "SMTP Verbindung erfolgreich hergestellt."
+        });
+        res.json({ success: true });
+    } catch (err) {
+        console.error("SMTP Test Failed:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
-// Sync Users
 app.get('/api/users', async (req, res) => {
     try {
         const rows = await query('SELECT * FROM users');
@@ -60,15 +108,21 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.post('/api/users', async (req, res) => {
-    const { id, name, username, password, role, status, facilityId } = req.body;
+    const { id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, allFacilitiesAlerts } = req.body;
     try {
-        await query('INSERT INTO users (id, name, username, password, role, status, facilityId) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), password=VALUES(password), status=VALUES(status), facilityId=VALUES(facilityId)', 
-        [id, name, username, password, role, status, facilityId]);
+        await query(`
+            INSERT INTO users (id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, allFacilitiesAlerts) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+            ON DUPLICATE KEY UPDATE 
+                name=VALUES(name), password=VALUES(password), email=VALUES(email), 
+                status=VALUES(status), facilityId=VALUES(facilityId), 
+                emailAlerts=VALUES(emailAlerts), telegramAlerts=VALUES(telegramAlerts), 
+                allFacilitiesAlerts=VALUES(allFacilitiesAlerts)`, 
+        [id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, allFacilitiesAlerts]);
         res.sendStatus(200);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Sync Facilities
 app.get('/api/facilities', async (req, res) => {
     try {
         const rows = await query('SELECT * FROM facilities');
@@ -85,7 +139,6 @@ app.post('/api/facilities', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Sync Readings
 app.get('/api/readings', async (req, res) => {
     try {
         const rows = await query('SELECT * FROM readings ORDER BY timestamp DESC LIMIT 1000');
@@ -94,10 +147,29 @@ app.get('/api/readings', async (req, res) => {
 });
 
 app.post('/api/readings', async (req, res) => {
-    const { id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason } = req.body;
+    const { id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason, alertData, smtpConfig } = req.body;
     try {
         await query('INSERT INTO readings (id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
         [id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason]);
+        
+        // If it's a violation (reason exists) AND smtp is configured, find recipients
+        if (reason && smtpConfig && alertData) {
+            const recipients = await query(`
+                SELECT email FROM users 
+                WHERE emailAlerts = 1 
+                AND email IS NOT NULL 
+                AND (allFacilitiesAlerts = 1 OR facilityId = ?)
+            `, [facilityId]);
+
+            for (const r of recipients) {
+                try {
+                    await sendAlertEmail(smtpConfig, r.email, { ...alertData, reason });
+                } catch (e) {
+                    console.error(`Failed to send alert to ${r.email}:`, e.message);
+                }
+            }
+        }
+        
         res.sendStatus(200);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });

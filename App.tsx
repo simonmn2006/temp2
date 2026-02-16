@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Language, AdminTab, User, Facility, Refrigerator, Assignment, Menu, FormTemplate, Reading, FormResponse, RefrigeratorType, CookingMethod, FacilityType, Holiday, FacilityException, Alert, AuditLog, ReminderConfig } from './types';
 import { translations } from './translations';
@@ -34,7 +33,6 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>('de');
   const [backendError, setBackendError] = useState<boolean>(false);
   
-  // --- PERSISTENCE: SESSION ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('gourmetta_auth') === 'true';
   });
@@ -48,7 +46,6 @@ const App: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<string>(AdminTab.DASHBOARD);
 
-  // --- PERSISTENCE: DATA ---
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const saved = localStorage.getItem('gourmetta_cache_users');
@@ -101,7 +98,6 @@ const App: React.FC = () => {
     privacy: "Wir nehmen Datenschutz ernst. Diese App speichert Messdaten in Ihrer MariaDB."
   });
 
-  // --- DATA FETCHING & SYNC ---
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -118,14 +114,14 @@ const App: React.FC = () => {
 
         if (uRes.ok) {
             const data = await uRes.json();
-            if (data && Array.isArray(data) && data.length > 0) {
+            if (data && Array.isArray(data)) {
               setUsers(data);
               localStorage.setItem('gourmetta_cache_users', JSON.stringify(data));
             }
         }
         if (fRes.ok) {
             const data = await fRes.json();
-            if (data && Array.isArray(data) && data.length > 0) {
+            if (data && Array.isArray(data)) {
               setFacilities(data);
               localStorage.setItem('gourmetta_cache_facilities', JSON.stringify(data));
             }
@@ -139,10 +135,9 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
-  const queueData = async (type: 'reading' | 'form' | 'user' | 'facility', data: any) => {
+  const queueData = async (type: 'reading' | 'form' | 'user' | 'facility', data: any, alertContext?: Alert) => {
     const endpoint = type === 'reading' ? 'readings' : type === 'user' ? 'users' : type === 'facility' ? 'facilities' : 'forms';
     
-    // Update state first
     if (type === 'user') {
       const nextUsers = [...users.filter(u => u.id !== data.id), data];
       setUsers(nextUsers);
@@ -156,21 +151,25 @@ const App: React.FC = () => {
     if (type === 'reading') setReadings(prev => [data, ...prev]);
 
     try {
+        const smtpStr = localStorage.getItem('gourmetta_smtp');
+        const smtpConfig = smtpStr ? JSON.parse(smtpStr) : null;
+
         await fetch(`${API_BASE}/${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: JSON.stringify({
+                ...data,
+                alertData: alertContext,
+                smtpConfig: smtpConfig ? { ...smtpConfig, secure: smtpConfig.port === '465' } : null
+            })
         });
     } catch (e) {
-        console.warn(`Background sync failed for ${type}. Entry kept in local vault.`);
+        console.warn(`Sync failed for ${type}. Local only for now.`);
     }
   };
 
   const handleLogin = (username: string, password?: string) => {
-    const defaultSuper = {id: 'U-SUPER', name: 'System SuperAdmin', username: 'super', password: 'super', role: 'SuperAdmin', status: 'Active'} as User;
-    
-    // Always include superadmin in the search pool
-    const pool = users.some(u => u.username === 'super') ? users : [defaultSuper, ...users];
+    const pool = users.length > 0 ? users : [{id: 'U-SUPER', name: 'System SuperAdmin', username: 'super', password: 'super', role: 'SuperAdmin', status: 'Active'} as User];
     const foundUser = pool.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
     
     if (foundUser) {
@@ -178,7 +177,6 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       localStorage.setItem('gourmetta_auth', 'true');
       localStorage.setItem('gourmetta_user', JSON.stringify(foundUser));
-      
       const isPrivileged = foundUser.role === 'Admin' || foundUser.role === 'Manager' || foundUser.role === 'SuperAdmin';
       setActiveTab(isPrivileged ? AdminTab.DASHBOARD : 'user_workspace');
       logAction('LOGIN', 'AUTH', "Erfolgreiche Anmeldung", foundUser);
@@ -189,13 +187,8 @@ const App: React.FC = () => {
     const user = userOverride || currentUser;
     if (!user) return;
     const newLog: AuditLog = {
-      id: "LOG-" + Date.now(),
-      timestamp: new Date().toISOString(),
-      userId: user.id,
-      userName: user.name,
-      action,
-      entity,
-      details
+      id: "LOG-" + Date.now(), timestamp: new Date().toISOString(),
+      userId: user.id, userName: user.name, action, entity, details
     };
     setAuditLogs(prev => [newLog, ...prev]);
   }, [currentUser]);
@@ -211,24 +204,12 @@ const App: React.FC = () => {
     const formPages = formResponses.length;
     const menuDays = new Set(readings.filter(r => r.targetType === 'menu').map(r => r.timestamp.split('T')[0] + r.facilityId)).size;
     const fridgeEntries = readings.filter(r => r.targetType === 'refrigerator').length;
-    const fridgePages = Math.ceil(fridgeEntries / 10);
-    const totalA4 = formPages + menuDays + fridgePages;
-    const tonerSaved = (totalA4 / 1500).toFixed(4);
-    return { totalA4, tonerSaved };
+    const totalA4 = formPages + menuDays + Math.ceil(fridgeEntries / 10);
+    return { totalA4, tonerSaved: (totalA4 / 1500).toFixed(4) };
   }, [readings, formResponses]);
 
   if (!isAuthenticated || !currentUser) {
-    return (
-      <Login 
-        t={translations[language]} 
-        currentLanguage={language} 
-        onLanguageChange={setLanguage} 
-        onLogin={handleLogin} 
-        users={users} 
-        legalTexts={legalTexts}
-        backendOffline={backendError}
-      />
-    );
+    return <Login t={translations[language]} currentLanguage={language} onLanguageChange={setLanguage} onLogin={handleLogin} users={users} legalTexts={legalTexts} backendOffline={backendError} />;
   }
 
   const renderAdminContent = () => {
@@ -243,28 +224,10 @@ const App: React.FC = () => {
       case AdminTab.REPORTS: return <ReportsPage t={t} currentUser={currentUser} readings={readings} formResponses={formResponses} menus={menus} fridges={fridges} users={users} facilities={facilities} excludedFacilities={excludedFacilities} forms={forms} assignments={assignments} />;
       case AdminTab.FACILITY_ANALYTICS: return <FacilityAnalyticsPage t={t} facilities={facilities} alerts={alerts} readings={readings} facilityTypes={facilityTypes} />;
       case AdminTab.REMINDERS: return <RemindersPage t={t} reminders={reminders} setReminders={setReminders} onLog={logAction} />;
-      case AdminTab.SETTINGS: return (
-        <SettingsPage 
-          t={t} 
-          facilities={facilities} 
-          fridgeTypes={fridgeTypes} 
-          setFridgeTypes={setFridgeTypes} 
-          cookingMethods={cookingMethods} 
-          setCookingMethods={setCookingMethods} 
-          facilityTypes={facilityTypes} 
-          setFacilityTypes={setFacilityTypes} 
-          holidays={holidays} 
-          setHolidays={setHolidays} 
-          excludedFacilities={excludedFacilities} 
-          setExcludedFacilities={setExcludedFacilities}
-          legalTexts={legalTexts}
-          setLegalTexts={setLegalTexts}
-        />
-      );
+      case AdminTab.SETTINGS: return <SettingsPage t={t} facilities={facilities} fridgeTypes={fridgeTypes} setFridgeTypes={setFridgeTypes} cookingMethods={cookingMethods} setCookingMethods={setCookingMethods} facilityTypes={facilityTypes} setFacilityTypes={setFacilityTypes} holidays={holidays} setHolidays={setHolidays} excludedFacilities={excludedFacilities} setExcludedFacilities={setExcludedFacilities} legalTexts={legalTexts} setLegalTexts={setLegalTexts} />;
       case AdminTab.BACKUP_SYNC: return <BackupSyncPage t={t} users={users} setUsers={setUsers} facilities={facilities} setFacilities={setFacilities} currentUser={currentUser} onLog={logAction} facilityTypes={facilityTypes} cookingMethods={cookingMethods} />;
       case AdminTab.AUDIT_LOGS: return <AuditLogsPage t={t} logs={auditLogs} />;
-      default: 
-        return (
+      default: return (
           <div className="space-y-10 animate-in fade-in duration-700 text-left pb-16">
             <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center md:items-start justify-between gap-8 relative overflow-hidden">
                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full -mr-20 -mt-20 blur-3xl pointer-events-none" />
@@ -277,7 +240,6 @@ const App: React.FC = () => {
                      <span className="text-2xl font-bold text-slate-400 tracking-tight">Willkommen, {currentUser.name}</span>
                   </div>
                </div>
-               
                <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 p-8 rounded-[2.5rem] flex flex-col justify-center items-center text-center shadow-inner relative group min-w-[240px] z-10">
                   <div className="absolute top-2 right-4 text-[8px] font-black text-emerald-500/50 uppercase tracking-widest">Gourmetta Go Green</div>
                   <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center text-3xl mb-3 shadow-md group-hover:scale-110 transition-transform duration-500">🍃</div>
@@ -290,33 +252,15 @@ const App: React.FC = () => {
                   </div>
                </div>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
-                    <span className="text-3xl block mb-2">🏢</span>
-                    <span className="text-3xl font-black text-blue-600">{facilities.length}</span>
-                    <p className="text-[10px] font-black uppercase text-slate-400">Standorte</p>
-                </div>
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
-                    <span className="text-3xl block mb-2">👥</span>
-                    <span className="text-3xl font-black text-indigo-600">{users.length}</span>
-                    <p className="text-[10px] font-black uppercase text-slate-400">Benutzer</p>
-                </div>
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
-                    <span className="text-3xl block mb-2">📄</span>
-                    <span className="text-3xl font-black text-emerald-600">{readings.length + formResponses.length}</span>
-                    <p className="text-[10px] font-black uppercase text-slate-400">Digitale Einträge</p>
-                </div>
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
-                    <span className="text-3xl block mb-2">🖨️</span>
-                    <span className="text-3xl font-black text-slate-900">{globalGreenImpact.tonerSaved}</span>
-                    <p className="text-[10px] font-black uppercase text-slate-400">Toner gespart</p>
-                </div>
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">🏢</span><span className="text-3xl font-black text-blue-600">{facilities.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Standorte</p></div>
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">👥</span><span className="text-3xl font-black text-indigo-600">{users.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Benutzer</p></div>
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">📄</span><span className="text-3xl font-black text-emerald-600">{readings.length + formResponses.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Digitale Einträge</p></div>
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">🖨️</span><span className="text-3xl font-black text-slate-900">{globalGreenImpact.tonerSaved}</span><p className="text-[10px] font-black uppercase text-slate-400">Toner gespart</p></div>
             </div>
             {backendError && (
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center space-x-3 text-amber-700 font-bold text-xs uppercase tracking-widest animate-pulse">
-                <span>⚠️</span>
-                <span>LOKALER VAULT AKTIV (Server Offline). Daten werden im Browser gesichert.</span>
+                <span>⚠️</span><span>LOKALER VAULT AKTIV (Server Offline). Daten werden im Browser gesichert.</span>
               </div>
             )}
           </div>
@@ -332,7 +276,7 @@ const App: React.FC = () => {
         </DashboardLayout>
       ) : (
         <UserDashboardLayout t={translations[language]} activeTab={activeTab} onTabChange={setActiveTab} onLogout={handleLogout} language={language} onLanguageChange={setLanguage} assignments={assignments} currentUser={currentUser!} formResponses={formResponses} readings={readings} holidays={holidays} isOnline={!backendError} isSyncing={false} offlineQueueCount={0} facilities={facilities} facilityTypes={facilityTypes}>
-          {activeTab === 'user_workspace' ? <UserWorkspace t={translations[language]} user={currentUser} fridges={fridges} menus={menus} assignments={assignments} readings={readings} onSave={(d) => queueData('reading', d)} fridgeTypes={fridgeTypes} cookingMethods={cookingMethods} facilities={facilities} excludedFacilities={excludedFacilities} facilityTypes={facilityTypes} onViolation={(alert) => setAlerts(prev => [...prev, alert])} formResponses={formResponses} /> :
+          {activeTab === 'user_workspace' ? <UserWorkspace t={translations[language]} user={currentUser} fridges={fridges} menus={menus} assignments={assignments} readings={readings} onSave={(d, alert) => { queueData('reading', d, alert); if(alert) setAlerts(prev => [...prev, alert]); }} fridgeTypes={fridgeTypes} cookingMethods={cookingMethods} facilities={facilities} excludedFacilities={excludedFacilities} facilityTypes={facilityTypes} onViolation={(alert) => setAlerts(prev => [...prev, alert])} formResponses={formResponses} /> :
            activeTab === 'user_forms' ? <UserForms t={translations[language]} user={currentUser} forms={forms} assignments={assignments} excludedFacilities={excludedFacilities} facilityTypes={facilityTypes} facilities={facilities} onSave={(d) => queueData('form', d)} formResponses={formResponses} /> :
            <UserReports t={translations[language]} user={currentUser} readings={readings} menus={menus} fridges={fridges} fridgeTypes={fridgeTypes} cookingMethods={cookingMethods} facilities={facilities} assignments={assignments} formResponses={formResponses} excludedFacilities={excludedFacilities} forms={forms} facilityTypes={facilityTypes} />}
         </UserDashboardLayout>
