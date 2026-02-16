@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Language, TranslationSet, User } from '../types';
 
@@ -5,7 +6,7 @@ interface LoginProps {
   t: TranslationSet;
   currentLanguage: Language;
   onLanguageChange: (lang: Language) => void;
-  onLogin: (username: string, password?: string) => void;
+  onLogin: (username: string, password?: string, stayLoggedIn?: boolean) => void;
   users: User[];
   legalTexts: { imprint: string; privacy: string };
   backendOffline?: boolean;
@@ -16,6 +17,7 @@ const LOGO_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' v
 export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChange, onLogin, users, legalTexts, backendOffline }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [stayLoggedIn, setStayLoggedIn] = useState(true);
   const [alertMsg, setAlertMsg] = useState<{ text: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default' | 'unsupported'>('default');
@@ -36,29 +38,17 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
       showAlert(currentLanguage === 'de' ? 'Browser unterstützt keine Benachrichtigungen.' : 'Browser does not support notifications.', 'error');
       return;
     }
-
     const isSecure = window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
     if (!isSecure) {
-      showAlert(currentLanguage === 'de' 
-        ? 'Sicherheitsfehler: Benachrichtigungen erfordern HTTPS oder Localhost. Chrome blockiert diesen Aufruf auf ungesicherten IP-Adressen.' 
-        : 'Security Error: Notifications require HTTPS or Localhost. Chrome blocks this API on unsecure IP addresses.', 'error');
+      showAlert(currentLanguage === 'de' ? 'Sicherheitsfehler: Benachrichtigungen erfordern HTTPS.' : 'Security Error: Notifications require HTTPS.', 'error');
       return;
     }
-
     try {
       const permission = await Notification.requestPermission();
       setNotificationStatus(permission);
-      
-      if (permission === 'granted') {
-        showAlert(currentLanguage === 'de' ? 'Benachrichtigungen aktiviert!' : 'Notifications enabled!', 'success');
-      } else if (permission === 'denied') {
-        showAlert(currentLanguage === 'de' 
-          ? 'Blockiert. Bitte klicken Sie auf das Schloss-Symbol (oben links) und setzen Sie "Benachrichtigungen" auf "Zulassen".' 
-          : 'Blocked. Please click the Lock icon (top left) and set "Notifications" to "Allow".', 'error');
-      }
+      if (permission === 'granted') showAlert(currentLanguage === 'de' ? 'Benachrichtigungen aktiviert!' : 'Notifications enabled!', 'success');
     } catch (err) {
-      showAlert(currentLanguage === 'de' ? 'Anfrage fehlgeschlagen. Prüfen Sie die Browser-Berechtigungen.' : 'Request failed. Check browser permissions.', 'info');
+      showAlert(currentLanguage === 'de' ? 'Anfrage fehlgeschlagen.' : 'Request failed.', 'info');
     }
   };
 
@@ -84,21 +74,17 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
     }
 
     const pool = users.some(u => u.username === 'super') ? users : [{id: 'U-SUPER', username: 'super', password: 'super', name: 'SuperAdmin', role: 'SuperAdmin', status: 'Active'} as User, ...users];
-
-    const userMatch = pool.find(u => 
-      u.username.toLowerCase() === cleanUsername.toLowerCase() && 
-      u.password === cleanPassword
-    );
+    const userMatch = pool.find(u => u.username.toLowerCase() === cleanUsername.toLowerCase() && u.password === cleanPassword);
 
     if (!userMatch) {
       errors.add('username');
       errors.add('password');
       setInvalidFields(errors);
-      showAlert(currentLanguage === 'de' ? 'Anmeldung fehlgeschlagen. Bitte prüfen Sie Ihre Daten.' : 'Login failed. Please check your credentials.', 'error');
+      showAlert(currentLanguage === 'de' ? 'Anmeldung fehlgeschlagen.' : 'Login failed.', 'error');
       return;
     }
 
-    onLogin(cleanUsername, cleanPassword);
+    onLogin(cleanUsername, cleanPassword, stayLoggedIn);
   };
 
   const getFieldClass = (fieldName: string) => {
@@ -123,66 +109,49 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
 
       <div className="w-full max-w-[460px] bg-white rounded-[3.5rem] shadow-2xl p-10 lg:p-14 border border-slate-100 relative z-10 flex flex-col">
         <div className="flex flex-col items-center mb-10">
-          <div className="relative">
-            <button 
-              type="button"
-              onClick={requestNotificationPermission}
-              className={`relative w-20 h-20 mb-6 transition-all duration-500 hover:scale-110 active:scale-95 group flex items-center justify-center ${notificationStatus === 'granted' ? 'cursor-default' : 'cursor-pointer'}`}
-              title={notificationStatus === 'denied' ? 'Benachrichtigungen blockiert' : 'Klicken für Push-Dienste'}
-            >
-              <img 
-                src={LOGO_URL} 
-                className={`w-full h-full object-contain ${notificationStatus === 'default' ? 'animate-pulse' : ''} ${notificationStatus === 'denied' ? 'grayscale opacity-50' : ''}`} 
-                alt="Gourmetta Logo" 
-              />
-              {notificationStatus === 'granted' && (
-                <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-emerald-500 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white shadow-lg">✓</div>
-              )}
-              {notificationStatus === 'denied' && (
-                <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-rose-500 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white shadow-lg">!</div>
-              )}
-            </button>
-          </div>
+          <button type="button" onClick={requestNotificationPermission} className="w-20 h-20 mb-6 transition-all duration-500 hover:scale-110 active:scale-95 flex items-center justify-center">
+            <img src={LOGO_URL} className={`w-full h-full object-contain ${notificationStatus === 'default' ? 'animate-pulse' : ''}`} alt="Logo" />
+          </button>
           <h1 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">gourmetta</h1>
           <div className="mt-4 flex items-center space-x-2">
              <div className={`w-2 h-2 rounded-full ${backendOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-               {backendOffline ? 'Lokaler Vault Modus' : 'Cloud Sync Aktiv'}
-             </span>
+             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{backendOffline ? 'Offline Modus' : 'Cloud Sync Aktiv'}</span>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6 flex-1">
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t.username}</label>
-              <input type="text" value={username} onChange={e => setUsername(e.target.value)} className={getFieldClass('username')} placeholder="Nutzername..." />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nutzername</label>
+              <input type="text" value={username} onChange={e => setUsername(e.target.value)} className={getFieldClass('username')} placeholder="Username..." />
             </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t.password}</label>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Passwort</label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={getFieldClass('password')} placeholder="••••••••" />
             </div>
           </div>
 
+          <div className="flex items-center justify-between px-2 pt-2">
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <div onClick={() => setStayLoggedIn(!stayLoggedIn)} className={`w-10 h-6 rounded-full transition-all relative ${stayLoggedIn ? 'bg-blue-600' : 'bg-slate-200'}`}>
+                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all shadow-sm ${stayLoggedIn ? 'left-4.5' : 'left-0.5'}`} />
+              </div>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">Angemeldet bleiben</span>
+            </label>
+          </div>
+
           <div className="pt-4">
             <button type="submit" className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] uppercase tracking-[0.2em] text-xs bg-blue-600 shadow-blue-500/20">
-              {t.loginButton} &rarr;
+              Einloggen &rarr;
             </button>
           </div>
           
-          <div className="pt-8 mt-4 border-t border-slate-50 flex flex-col items-center space-y-6">
-            <div className="flex items-center space-x-6">
-              <button type="button" onClick={() => setShowImprint(true)} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-widest transition-colors">Impressum</button>
-              <span className="w-1.5 h-1.5 bg-slate-100 rounded-full" />
-              <button type="button" onClick={() => setShowPrivacy(true)} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-widest transition-colors">Datenschutz</button>
-            </div>
+          <div className="pt-8 mt-4 border-t border-slate-50 flex justify-center space-x-6">
+            <button type="button" onClick={() => setShowImprint(true)} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-widest transition-colors">Impressum</button>
+            <button type="button" onClick={() => setShowPrivacy(true)} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-widest transition-colors">Datenschutz</button>
           </div>
         </form>
       </div>
-
-      <p className="mt-8 text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-60">
-        &copy; {new Date().getFullYear()} Gourmetta Gastronomie GmbH
-      </p>
 
       {(showImprint || showPrivacy) && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
@@ -190,7 +159,7 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
            <div className="relative bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl p-10 lg:p-14 overflow-hidden border border-white/10 flex flex-col max-h-[85vh]">
               <div className="flex justify-between items-center mb-8 shrink-0">
                 <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{showImprint ? 'Impressum' : 'Datenschutz'}</h2>
-                <button onClick={() => { setShowImprint(false); setShowPrivacy(false); }} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold hover:scale-110 transition-transform">✕</button>
+                <button onClick={() => { setShowImprint(false); setShowPrivacy(false); }} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold">✕</button>
               </div>
               <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 whitespace-pre-wrap font-medium text-slate-600 text-sm leading-relaxed pb-6">
                  {showImprint ? legalTexts.imprint : legalTexts.privacy}

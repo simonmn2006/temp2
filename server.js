@@ -33,68 +33,71 @@ async function query(sql, params) {
     }
 }
 
-// Helper to send email
-async function sendAlertEmail(config, recipient, alertDetails) {
-    const transporter = nodemailer.createTransport({
-        host: config.host,
-        port: parseInt(config.port),
-        secure: config.secure, 
-        auth: { user: config.user, pass: config.pass }
-    });
-
-    const html = `
-        <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
-            <h2 style="color: #e11d48;">⚠️ HACCP Temperatur Alarm</h2>
-            <div style="background: #fff1f2; padding: 15px; border-radius: 10px; border: 1px solid #fecdd3;">
-                <p><b>Standort:</b> ${alertDetails.facilityName}</p>
-                <p><b>Gerät:</b> ${alertDetails.targetName}</p>
-                <p><b>Messwert:</b> <span style="color: #e11d48; font-size: 1.2em;">${alertDetails.value}°C</span></p>
-                <p><b>Zeit:</b> ${new Date(alertDetails.timestamp).toLocaleString('de-DE')}</p>
-            </div>
-        </div>
-    `;
-
-    return await transporter.sendMail({
-        from: config.from || config.user,
-        to: recipient,
-        subject: `⚠️ Alarm: ${alertDetails.facilityName}`,
-        html: html
-    });
-}
-
 // Test Telegram Bot Endpoint
 app.post('/api/test-telegram', async (req, res) => {
-    const { token } = req.body;
+    const { token, chatId } = req.body;
     try {
-        const response = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-        const data = await response.json();
-        if (data.ok) {
-            res.json({ success: true, bot: data.result.username });
-        } else {
-            throw new Error(data.description);
+        const botRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+        const botData = await botRes.json();
+        
+        if (!botData.ok) throw new Error(botData.description || 'Invalid Token');
+
+        if (chatId) {
+            const msgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: `🛡️ *Gourmetta HACCP Portal*\nTest-Nachricht: Der Bot ist erfolgreich verknüpft!`,
+                    parse_mode: 'Markdown'
+                })
+            });
+            const msgData = await msgRes.json();
+            if (!msgData.ok) throw new Error(msgData.description || 'Message failed');
         }
+
+        res.json({ success: true, bot: botData.result.username });
     } catch (err) {
+        console.error("Telegram Test Error:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Test Email Endpoint
+// Test Email Endpoint (Optimized for Strato/Gmail)
 app.post('/api/test-email', async (req, res) => {
     const { host, port, user, pass, from, secure } = req.body;
     try {
+        // Strato usually needs port 465 (secure: true) or 587 (secure: false)
         const transporter = nodemailer.createTransport({
-            host, port: parseInt(port), secure,
-            auth: { user, pass }
+            host, 
+            port: parseInt(port), 
+            secure: secure || port === '465', 
+            auth: { user, pass },
+            tls: {
+                rejectUnauthorized: false // Helps with some server certificates
+            }
         });
+
         await transporter.verify();
-        await transporter.sendMail({
-            from: from || user,
-            to: user,
-            subject: "Gourmetta SMTP Test",
-            text: "Verbindung erfolgreich."
+
+        const info = await transporter.sendMail({
+            from: from || user, // Strato MUST have 'from' identical to 'user'
+            to: user, // Send to self for testing
+            subject: "🛡️ Gourmetta SMTP Test",
+            html: `
+                <div style="font-family: sans-serif; padding: 40px; background: #f8fafc; color: #1e293b; border-radius: 24px;">
+                    <h1 style="color: #2563eb; margin-bottom: 20px;">✅ SMTP Verbindung Erfolgreich</h1>
+                    <p>Ihre E-Mail Konfiguration für <b>${host}</b> ist korrekt eingestellt.</p>
+                    <hr style="border: 1px solid #e2e8f0; margin: 20px 0;" />
+                    <p style="font-size: 12px; color: #94a3b8;">Gesendet am: ${new Date().toLocaleString('de-DE')}</p>
+                </div>
+            `
         });
+
+        console.log("Email sent: %s", info.messageId);
         res.json({ success: true });
     } catch (err) {
+        console.error("SMTP Test Error Details:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -107,17 +110,17 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.post('/api/users', async (req, res) => {
-    const { id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, telegramChatId, allFacilitiesAlerts } = req.body;
+    const { id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, allFacilitiesAlerts } = req.body;
     try {
         await query(`
-            INSERT INTO users (id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, telegramChatId, allFacilitiesAlerts) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+            INSERT INTO users (id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, allFacilitiesAlerts) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
             ON DUPLICATE KEY UPDATE 
                 name=VALUES(name), password=VALUES(password), email=VALUES(email), 
                 status=VALUES(status), facilityId=VALUES(facilityId), 
                 emailAlerts=VALUES(emailAlerts), telegramAlerts=VALUES(telegramAlerts), 
-                telegramChatId=VALUES(telegramChatId), allFacilitiesAlerts=VALUES(allFacilitiesAlerts)`, 
-        [id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, telegramChatId, allFacilitiesAlerts]);
+                allFacilitiesAlerts=VALUES(allFacilitiesAlerts)`, 
+        [id, name, username, password, email, role, status, facilityId, emailAlerts, telegramAlerts, allFacilitiesAlerts]);
         res.sendStatus(200);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -150,10 +153,6 @@ app.post('/api/readings', async (req, res) => {
     try {
         await query('INSERT INTO readings (id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
         [id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason]);
-        
-        // Handle Alarms (SMTP already implemented, Telegram logic follows pattern)
-        // ...
-        
         res.sendStatus(200);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });

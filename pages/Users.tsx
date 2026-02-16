@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { TranslationSet, User, Facility, AuditLog } from '../types';
 
@@ -18,7 +17,6 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
   const [searchTerm, setSearchTerm] = useState('');
   const [alertMsg, setAlertMsg] = useState<{ text: string, type: 'error' | 'success' } | null>(null);
   
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
 
   const [formData, setFormData] = useState<Partial<User>>({
@@ -28,8 +26,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
     password: '',
     role: 'User',
     status: 'Active',
-    facilityId: '',
-    telegramChatId: ''
+    facilityId: ''
   });
 
   const [facilitySearch, setFacilitySearch] = useState('');
@@ -82,8 +79,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
       setEditingUser(null);
       setFormData({
         name: '', username: '', email: '', password: '', role: 'User', status: 'Active',
-        facilityId: currentUser.role === 'Manager' ? currentUser.facilityId : '',
-        telegramChatId: ''
+        facilityId: currentUser.role === 'Manager' ? currentUser.facilityId : ''
       });
       setFacilitySearch(currentUser.role === 'Manager' ? (facilities.find(f => f.id === currentUser.facilityId)?.name || '') : '');
     }
@@ -120,14 +116,18 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
         ...formData, 
         name: trimmedName, 
         username: trimmedUsername,
-        password: formData.password ? formData.password : editingUser.password
+        password: formData.password ? formData.password : editingUser.password,
+        // Ensure email is cleared if role is changed to User
+        email: formData.role === 'User' ? '' : formData.email
       } as User;
       setUsers(prev => prev.map(u => u.id === editingUser.id ? finalUser : u));
     } else {
       finalUser = {
         id: `U-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
         ...formData,
-        name: trimmedName, username: trimmedUsername,
+        name: trimmedName, 
+        username: trimmedUsername,
+        email: formData.role === 'User' ? '' : formData.email
       } as User;
       setUsers(prev => [...prev, finalUser]);
     }
@@ -221,23 +221,17 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
                      {currentUser.role === 'SuperAdmin' && <option value="SuperAdmin">SuperAdmin</option>}
                    </select>
                 </div>
-                <div>
-                   <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">E-Mail (Alarme)</label>
-                   <input type="email" disabled={isFieldDisabled('email')} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" />
-                </div>
-              </div>
-
-              {/* TELEGRAM CHAT ID FIELD */}
-              <div className="bg-sky-50 dark:bg-sky-900/10 p-5 rounded-[1.5rem] border border-sky-100 dark:border-sky-800">
-                <label className="block text-[10px] font-black text-sky-600 uppercase mb-2 px-1">✈️ Telegram Chat-ID</label>
-                <input 
-                  type="text" 
-                  value={formData.telegramChatId || ''} 
-                  onChange={e => setFormData({...formData, telegramChatId: e.target.value})} 
-                  placeholder="ID z.B. 123456789"
-                  className="w-full px-5 py-3 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-800 font-black text-sm outline-none focus:ring-4 focus:ring-sky-500/10" 
-                />
-                <p className="text-[9px] font-bold text-sky-400 mt-2 uppercase tracking-tighter">Wichtig für den Bot-Empfang</p>
+                {/* Email field only for non-User roles */}
+                {formData.role !== 'User' ? (
+                   <div className="animate-in slide-in-from-left-2 duration-300">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">E-Mail (Alarme)</label>
+                      <input type="email" disabled={isFieldDisabled('email')} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="beispiel@domain.de" />
+                   </div>
+                ) : (
+                  <div className="flex items-end pb-4">
+                    <p className="text-[10px] font-bold text-slate-400 italic px-1">Rolle 'User' erhält keine E-Mail Alarme.</p>
+                  </div>
+                )}
               </div>
 
               <div className="relative" ref={dropdownRef}>

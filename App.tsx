@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Language, AdminTab, User, Facility, Refrigerator, Assignment, Menu, FormTemplate, Reading, FormResponse, RefrigeratorType, CookingMethod, FacilityType, Holiday, FacilityException, Alert, AuditLog, ReminderConfig } from './types';
 import { translations } from './translations';
@@ -34,12 +35,12 @@ const App: React.FC = () => {
   const [backendError, setBackendError] = useState<boolean>(false);
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('gourmetta_auth') === 'true';
+    return localStorage.getItem('gourmetta_auth') === 'true' || sessionStorage.getItem('gourmetta_auth') === 'true';
   });
   
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
-      const saved = localStorage.getItem('gourmetta_user');
+      const saved = localStorage.getItem('gourmetta_user') || sessionStorage.getItem('gourmetta_user');
       return saved ? JSON.parse(saved) : null;
     } catch (e) { return null; }
   });
@@ -168,15 +169,18 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogin = (username: string, password?: string) => {
+  const handleLogin = (username: string, password?: string, stayLoggedIn?: boolean) => {
     const pool = users.length > 0 ? users : [{id: 'U-SUPER', name: 'System SuperAdmin', username: 'super', password: 'super', role: 'SuperAdmin', status: 'Active'} as User];
     const foundUser = pool.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
     
     if (foundUser) {
       setCurrentUser(foundUser);
       setIsAuthenticated(true);
-      localStorage.setItem('gourmetta_auth', 'true');
-      localStorage.setItem('gourmetta_user', JSON.stringify(foundUser));
+      
+      const storage = stayLoggedIn ? localStorage : sessionStorage;
+      storage.setItem('gourmetta_auth', 'true');
+      storage.setItem('gourmetta_user', JSON.stringify(foundUser));
+
       const isPrivileged = foundUser.role === 'Admin' || foundUser.role === 'Manager' || foundUser.role === 'SuperAdmin';
       setActiveTab(isPrivileged ? AdminTab.DASHBOARD : 'user_workspace');
       logAction('LOGIN', 'AUTH', "Erfolgreiche Anmeldung", foundUser);
@@ -198,6 +202,8 @@ const App: React.FC = () => {
     setCurrentUser(null);
     localStorage.removeItem('gourmetta_auth');
     localStorage.removeItem('gourmetta_user');
+    sessionStorage.removeItem('gourmetta_auth');
+    sessionStorage.removeItem('gourmetta_user');
   };
 
   const globalGreenImpact = useMemo(() => {

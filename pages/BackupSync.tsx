@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { TranslationSet, User, Facility, AuditLog, FacilityType, CookingMethod } from '../types';
 
@@ -14,6 +13,7 @@ interface SmtpConfig {
 
 interface TelegramConfig {
   botToken: string;
+  chatId: string;
 }
 
 interface BackupSyncPageProps {
@@ -45,16 +45,16 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
     if (saved) {
       try { return JSON.parse(saved); } catch (e) { console.error(e); }
     }
-    return { host: 'smtp.gmail.com', port: '587', encryption: 'STARTTLS', user: '', pass: '', from: '', secure: false };
+    return { host: 'smtp.strato.de', port: '465', encryption: 'SSL/TLS', user: '', pass: '', from: '', secure: true };
   });
 
-  // Persistent Telegram Config
+  // Persistent Global Telegram Config (One set for the whole system)
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
     const saved = localStorage.getItem('gourmetta_telegram');
     if (saved) {
       try { return JSON.parse(saved); } catch (e) { console.error(e); }
     }
-    return { botToken: '' };
+    return { botToken: '', chatId: '' };
   });
 
   useEffect(() => {
@@ -116,22 +116,33 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
         const res = await fetch(`http://${window.location.hostname}:3001/api/test-email`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...emailConfig, secure: emailConfig.port === '465' })
+            body: JSON.stringify({ 
+                ...emailConfig, 
+                secure: emailConfig.port === '465' || emailConfig.encryption === 'SSL/TLS'
+            })
         });
         const data = await res.json();
-        if (data.success) setTestSuccessEmail(true);
-        else throw new Error(data.error);
+        if (data.success) {
+          setTestSuccessEmail(true);
+          setImportStatus({ msg: 'Test-Email erfolgreich versendet!', type: 'success' });
+        } else {
+          throw new Error(data.error);
+        }
     } catch (err: any) {
         setTestSuccessEmail(false);
+        setImportStatus({ msg: `Fehler: ${err.message}`, type: 'error' });
     } finally {
         setIsTestLoadingEmail(false);
-        setTimeout(() => setTestSuccessEmail(null), 5000);
+        setTimeout(() => {
+          setTestSuccessEmail(null);
+          setImportStatus({msg: '', type: null});
+        }, 5000);
     }
   };
 
   const testTelegram = async () => {
-    if (!telegramConfig.botToken) {
-        setImportStatus({ msg: 'Bot Token benötigt!', type: 'error' });
+    if (!telegramConfig.botToken || !telegramConfig.chatId) {
+        setImportStatus({ msg: 'Token & Chat-ID benötigt!', type: 'error' });
         setTimeout(() => setImportStatus({msg: '', type: null}), 3000);
         return;
     }
@@ -141,16 +152,27 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
         const res = await fetch(`http://${window.location.hostname}:3001/api/test-telegram`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: telegramConfig.botToken })
+            body: JSON.stringify({ 
+                token: telegramConfig.botToken,
+                chatId: telegramConfig.chatId
+            })
         });
         const data = await res.json();
-        if (data.success) setTestSuccessTelegram(true);
-        else throw new Error(data.error);
+        if (data.success) {
+          setTestSuccessTelegram(true);
+          setImportStatus({ msg: `Bot ${data.bot} ist online!`, type: 'success' });
+        } else {
+          throw new Error(data.error);
+        }
     } catch (err: any) {
         setTestSuccessTelegram(false);
+        setImportStatus({ msg: `Fehler: ${err.message}`, type: 'error' });
     } finally {
         setIsTestLoadingTelegram(false);
-        setTimeout(() => setTestSuccessTelegram(null), 5000);
+        setTimeout(() => {
+          setTestSuccessTelegram(null);
+          setImportStatus({msg: '', type: null});
+        }, 5000);
     }
   };
 
@@ -195,7 +217,7 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-50 dark:border-slate-800 pb-8">
           <div>
             <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">🔔 Alarmempfänger</h2>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Wer soll im Fehlerfall benachrichtigt werden?</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Wer soll bei Grenzwert-Abweichungen benachrichtigt werden?</p>
           </div>
           <div className="relative w-full md:w-72">
              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
@@ -227,15 +249,12 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
                 </div>
 
                 <div className="flex items-center gap-4">
-                   <div className="flex items-center space-x-3 pr-4 border-r border-slate-100 dark:border-slate-800">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Global</label>
+                   <div className="flex items-center space-x-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Globales Monitoring</label>
                       <button onClick={() => toggleAllFacilities(user.id)} className={`w-12 h-6 rounded-full transition-all relative ${user.allFacilitiesAlerts ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'}`}>
                          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all shadow-sm ${user.allFacilitiesAlerts ? 'left-6.5' : 'left-0.5'}`} />
                       </button>
                    </div>
-                   {user.telegramAlerts && !user.telegramChatId && (
-                     <div className="text-[9px] font-black text-rose-500 uppercase animate-pulse">⚠️ Keine Chat-ID</div>
-                   )}
                 </div>
              </div>
            ))}
@@ -246,23 +265,23 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
         {/* SMTP SECTION */}
         <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-800 shadow-sm relative overflow-hidden">
           <div className="mb-8">
-             <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">E-Mail (SMTP)</h2>
-             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Zentraler Postausgang für Alarme</p>
+             <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">E-Mail (SMTP Server)</h2>
+             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Zentraler Postausgang für alle Alarme</p>
           </div>
           <div className="grid grid-cols-1 gap-4">
-             <input type="text" value={emailConfig.host} onChange={e => setEmailConfig({...emailConfig, host: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="Host (smtp.gmail.com)" />
+             <input type="text" value={emailConfig.host} onChange={e => setEmailConfig({...emailConfig, host: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="Host (z.B. smtp.strato.de)" />
              <div className="grid grid-cols-2 gap-4">
-               <input type="text" value={emailConfig.port} onChange={e => setEmailConfig({...emailConfig, port: e.target.value})} className="px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="Port (587)" />
+               <input type="text" value={emailConfig.port} onChange={e => setEmailConfig({...emailConfig, port: e.target.value})} className="px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="Port (465)" />
                <select value={emailConfig.encryption} onChange={e => setEmailConfig({...emailConfig, encryption: e.target.value})} className="px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-xs outline-none">
-                 <option value="STARTTLS">STARTTLS</option>
-                 <option value="SSL/TLS">SSL/TLS</option>
+                 <option value="STARTTLS">STARTTLS (587)</option>
+                 <option value="SSL/TLS">SSL/TLS (465)</option>
                </select>
              </div>
-             <input type="email" value={emailConfig.user} onChange={e => setEmailConfig({...emailConfig, user: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="Benutzer / Login" />
+             <input type="email" value={emailConfig.user} onChange={e => setEmailConfig({...emailConfig, user: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="Benutzername / Email" />
              <input type="password" value={emailConfig.pass} onChange={e => setEmailConfig({...emailConfig, pass: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="Passwort / App-Key" />
           </div>
           <button onClick={testEmail} disabled={isTestLoadingEmail} className={`w-full mt-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-3 transition-all ${testSuccessEmail === true ? 'bg-emerald-500 text-white' : testSuccessEmail === false ? 'bg-rose-500 text-white' : 'bg-slate-900 text-white hover:bg-blue-600'}`}>
-             {isTestLoadingEmail ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span>✉️ Email Test Senden</span>}
+             {isTestLoadingEmail ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span>✉️ Konfiguration Testen (E-Mail)</span>}
              {testSuccessEmail === true && <span>- Erfolgreich</span>}
              {testSuccessEmail === false && <span>- Fehler</span>}
           </button>
@@ -271,22 +290,26 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
         {/* TELEGRAM SECTION */}
         <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-800 shadow-sm relative overflow-hidden">
           <div className="mb-8">
-             <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Telegram Bot</h2>
-             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Echtzeit-Alarme via Push-Bot</p>
+             <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Telegram Bot Config</h2>
+             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Echtzeit-Push für kritische Events</p>
           </div>
           <div className="space-y-4">
              <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Bot API Token</label>
-                <input type="text" value={telegramConfig.botToken} onChange={e => setTelegramConfig({botToken: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="123456789:ABCDefGhI..." />
+                <input type="text" value={telegramConfig.botToken} onChange={e => setTelegramConfig({...telegramConfig, botToken: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none" placeholder="123456789:ABCDefGhI..." />
+             </div>
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Globaler Gruppen Chat-ID</label>
+                <input type="text" value={telegramConfig.chatId} onChange={e => setTelegramConfig({...telegramConfig, chatId: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm outline-none" placeholder="-100..." />
              </div>
              <div className="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-800">
-                <p className="text-[10px] font-bold text-blue-600 leading-relaxed">Info: Nutzer müssen ihre <b>Chat-ID</b> in den Benutzer-Einstellungen hinterlegen, um Alarme zu empfangen.</p>
+                <p className="text-[10px] font-bold text-blue-600 leading-relaxed italic">Info: Alle Nutzer, die "Telegram" aktiviert haben, erhalten ihre Alarme über diesen Bot an die hinterlegte Chat-ID.</p>
              </div>
           </div>
-          <button onClick={testTelegram} disabled={isTestLoadingTelegram} className={`w-full mt-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-3 transition-all ${testSuccessTelegram === true ? 'bg-emerald-500 text-white' : testSuccessTelegram === false ? 'bg-rose-500 text-white' : 'bg-slate-900 text-white hover:bg-sky-500'}`}>
-             {isTestLoadingTelegram ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span>✈️ Bot Verbindung Testen</span>}
+          <button onClick={testTelegram} disabled={isTestLoadingTelegram} className={`w-full mt-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-3 transition-all ${testSuccessTelegram === true ? 'bg-emerald-500 text-white' : testSuccessTelegram === false ? 'bg-rose-500 text-white' : 'bg-slate-900 text-white hover:bg-sky-500'}`}>
+             {isTestLoadingTelegram ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span>✈️ Bot Test-Nachricht senden</span>}
              {testSuccessTelegram === true && <span>- Online</span>}
-             {testSuccessTelegram === false && <span>- Offline</span>}
+             {testSuccessTelegram === false && <span>- Fehler</span>}
           </button>
         </div>
       </div>

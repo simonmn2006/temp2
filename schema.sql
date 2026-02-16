@@ -1,3 +1,4 @@
+
 CREATE DATABASE IF NOT EXISTS gourmetta_haccp;
 USE gourmetta_haccp;
 
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     facilityId VARCHAR(50),
     emailAlerts BOOLEAN DEFAULT FALSE,
     telegramAlerts BOOLEAN DEFAULT FALSE,
+    telegramChatId VARCHAR(50),
     allFacilitiesAlerts BOOLEAN DEFAULT FALSE
 );
 
