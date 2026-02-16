@@ -1,0 +1,7 @@
+{
+  "name": "server install temp",
+  "description": "A professional temperature monitoring and facility management platform for Gourmetta, featuring multi-language support and comprehensive administrative tools.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
