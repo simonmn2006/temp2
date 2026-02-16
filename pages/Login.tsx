@@ -17,7 +17,6 @@ const LOGO_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' v
 export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChange, onLogin, users, legalTexts, backendOffline }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [stayLoggedIn, setStayLoggedIn] = useState(true);
   const [alertMsg, setAlertMsg] = useState<{ text: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default' | 'unsupported'>('default');
@@ -84,7 +83,8 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
       return;
     }
 
-    onLogin(cleanUsername, cleanPassword, stayLoggedIn);
+    // Standard login flow
+    onLogin(cleanUsername, cleanPassword, true);
   };
 
   const getFieldClass = (fieldName: string) => {
@@ -129,15 +129,6 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Passwort</label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={getFieldClass('password')} placeholder="••••••••" />
             </div>
-          </div>
-
-          <div className="flex items-center justify-between px-2 pt-2">
-            <label className="flex items-center space-x-3 cursor-pointer group">
-              <div onClick={() => setStayLoggedIn(!stayLoggedIn)} className={`w-10 h-6 rounded-full transition-all relative ${stayLoggedIn ? 'bg-blue-600' : 'bg-slate-200'}`}>
-                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all shadow-sm ${stayLoggedIn ? 'left-4.5' : 'left-0.5'}`} />
-              </div>
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">Angemeldet bleiben</span>
-            </label>
           </div>
 
           <div className="pt-4">

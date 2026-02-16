@@ -83,9 +83,12 @@ const App: React.FC = () => {
   const [forms, setForms] = useState<FormTemplate[]>([
     { 
       id: 'F-SUP-CHECK', 
-      title: 'Supervisor Vor-Ort Check', 
-      description: 'Standardabfrage der physischen Präsenz', 
-      questions: [{ id: 'Q-SUP', text: 'Hat der Supervisor heute persönlich am Standort vorbeigeschaut?', type: 'yesno' }], 
+      title: 'Täglicher Hygiene-Check', 
+      description: 'Standardabfrage der HACCP Richtlinien', 
+      questions: [
+        { id: 'Q-CLEAN', text: 'Sind alle Arbeitsflächen desinfiziert?', type: 'yesno' },
+        { id: 'Q-PERS', text: 'Ist die persönliche Schutzkleidung vollständig?', type: 'yesno' }
+      ], 
       requiresSignature: true, 
       createdAt: '2024-01-01' 
     }
@@ -139,6 +142,7 @@ const App: React.FC = () => {
   const queueData = async (type: 'reading' | 'form' | 'user' | 'facility', data: any, alertContext?: Alert) => {
     const endpoint = type === 'reading' ? 'readings' : type === 'user' ? 'users' : type === 'facility' ? 'facilities' : 'forms';
     
+    // Immediate local state updates for responsiveness
     if (type === 'user') {
       const nextUsers = [...users.filter(u => u.id !== data.id), data];
       setUsers(nextUsers);
@@ -150,6 +154,7 @@ const App: React.FC = () => {
       localStorage.setItem('gourmetta_cache_facilities', JSON.stringify(nextFacs));
     }
     if (type === 'reading') setReadings(prev => [data, ...prev]);
+    if (type === 'form') setFormResponses(prev => [data, ...prev]);
 
     try {
         const smtpStr = localStorage.getItem('gourmetta_smtp');
@@ -210,6 +215,16 @@ const App: React.FC = () => {
     sessionStorage.removeItem('gourmetta_user');
   };
 
+  const resolveAlert = (id: string) => {
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, resolved: true } : a));
+    logAction('UPDATE', 'ALERTS', `Alarm ${id} als erledigt markiert`);
+  };
+
+  const resolveAllAlerts = () => {
+    setAlerts(prev => prev.map(a => ({ ...a, resolved: true })));
+    logAction('UPDATE', 'ALERTS', `Alle Alarme als erledigt markiert`);
+  };
+
   const globalGreenImpact = useMemo(() => {
     const formPages = formResponses.length;
     const menuDays = new Set(readings.filter(r => r.targetType === 'menu').map(r => r.timestamp.split('T')[0] + r.facilityId)).size;
@@ -224,9 +239,11 @@ const App: React.FC = () => {
 
   const renderAdminContent = () => {
     const t = translations[language];
+    const activeAlerts = alerts.filter(a => !a.resolved);
+    
     switch (activeTab) {
       case AdminTab.USERS: return <UsersPage t={t} currentUser={currentUser} users={users} setUsers={setUsers} facilities={facilities} onLog={logAction} onSync={(u) => queueData('user', u)} />;
-      case AdminTab.FACILITIES: return <FacilitiesPage t={t} facilities={facilities} setFacilities={setFacilities} facilityTypes={facilityTypes} cookingMethods={cookingMethods} users={users} onLog={logAction} onSync={(f) => queueData('facility', f)} />;
+      case AdminTab.FACILITIES: return <FacilitiesPage t={t} facilities={facilities} setFacilities={setFacilities} facilityTypes={facilityTypes} cookingMethods={cookingMethods} users={users} fridges={fridges} onLog={logAction} onSync={(f) => queueData('facility', f)} onTabChange={(tab) => setActiveTab(tab)} />;
       case AdminTab.REFRIGERATORS: return <RefrigeratorsPage t={t} facilities={facilities} setFacilities={setFacilities} fridges={fridges} setFridges={setFridges} fridgeTypes={fridgeTypes} users={users} setUsers={setUsers} setAssignments={setAssignments} onLog={logAction} setAlerts={setAlerts} />;
       case AdminTab.MENUS: return <MenusPage t={t} menus={menus} setMenus={setMenus} />;
       case AdminTab.FORM_CREATOR: return <FormCreatorPage t={t} forms={forms} setForms={setForms} />;
@@ -239,6 +256,65 @@ const App: React.FC = () => {
       case AdminTab.AUDIT_LOGS: return <AuditLogsPage t={t} logs={auditLogs} />;
       default: return (
           <div className="space-y-10 animate-in fade-in duration-700 text-left pb-16">
+            {activeAlerts.length > 0 && (
+              <div className="animate-in slide-in-from-top-4 duration-500">
+                <div className="flex justify-between items-end mb-6">
+                  <div>
+                    <h2 className="text-2xl font-black text-rose-600 uppercase tracking-tighter italic">⚠️ Kritische Alarme</h2>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Eingreifen erforderlich: Abweichungen festgestellt</p>
+                  </div>
+                  <button 
+                    onClick={resolveAllAlerts}
+                    className="px-6 py-2.5 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-rose-700 transition-all active:scale-95"
+                  >
+                    Alle erledigt ✓
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   {activeAlerts.map(alert => (
+                     <div key={alert.id} className="bg-white dark:bg-slate-900 border-l-[12px] border-rose-500 rounded-[2.5rem] p-8 shadow-xl shadow-rose-500/10 flex flex-col justify-between relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                           <span className="text-6xl">🚨</span>
+                        </div>
+                        <div>
+                           <div className="flex justify-between items-start mb-4">
+                              <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest bg-rose-50 dark:bg-rose-900/30 px-2 py-1 rounded">Grenzwert verletzt</span>
+                              <span className="text-[9px] font-mono text-slate-400">{new Date(alert.timestamp).toLocaleTimeString('de-DE')}</span>
+                           </div>
+                           <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase leading-tight mb-1">{alert.facilityName}</h3>
+                           <p className="font-bold text-slate-500 text-sm mb-6">{alert.targetName} &bull; {alert.checkpointName}</p>
+                           
+                           <div className="bg-rose-50 dark:bg-rose-900/20 p-5 rounded-2xl border border-rose-100 dark:border-rose-800 mb-8">
+                              <div className="flex justify-between items-center">
+                                 <div>
+                                    <p className="text-[8px] font-black text-rose-400 uppercase mb-1">Gemessen</p>
+                                    <p className="text-3xl font-black text-rose-600 font-mono italic tracking-tighter">{alert.value.toFixed(1)}°C</p>
+                                 </div>
+                                 <div className="text-right">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Limit</p>
+                                    <p className="text-sm font-black text-slate-700 dark:text-slate-300 font-mono">{alert.min}° bis {alert.max}°C</p>
+                                 </div>
+                              </div>
+                           </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                           <div className="flex items-center space-x-2">
+                              <img src={`https://picsum.photos/seed/${alert.userId}/40/40`} className="w-6 h-6 rounded-full grayscale" alt="User" />
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{alert.userName}</span>
+                           </div>
+                           <button 
+                             onClick={() => resolveAlert(alert.id)}
+                             className="px-5 py-2 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg"
+                           >
+                             Erledigt
+                           </button>
+                        </div>
+                     </div>
+                   ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center md:items-start justify-between gap-8 relative overflow-hidden">
                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full -mr-20 -mt-20 blur-3xl pointer-events-none" />
                <div className="flex flex-col md:flex-row items-center space-y-6 md:space-y-0 md:space-x-8 z-10">

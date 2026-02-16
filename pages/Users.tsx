@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { TranslationSet, User, Facility, AuditLog } from '../types';
 
@@ -117,7 +118,6 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
         name: trimmedName, 
         username: trimmedUsername,
         password: formData.password ? formData.password : editingUser.password,
-        // Ensure email is cleared if role is changed to User
         email: formData.role === 'User' ? '' : formData.email
       } as User;
       setUsers(prev => prev.map(u => u.id === editingUser.id ? finalUser : u));
@@ -221,7 +221,6 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
                      {currentUser.role === 'SuperAdmin' && <option value="SuperAdmin">SuperAdmin</option>}
                    </select>
                 </div>
-                {/* Email field only for non-User roles */}
                 {formData.role !== 'User' ? (
                    <div className="animate-in slide-in-from-left-2 duration-300">
                       <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">E-Mail (Alarme)</label>
@@ -235,15 +234,42 @@ export const UsersPage: React.FC<UsersPageProps> = ({ t, currentUser, users, set
               </div>
 
               <div className="relative" ref={dropdownRef}>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">Standort</label>
-                <div onClick={() => !isFieldDisabled('facilityId') && setIsDropdownOpen(true)} className={`w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm h-[56px] flex items-center ${isFieldDisabled('facilityId') ? 'opacity-50' : 'cursor-pointer'}`}>
-                   {facilities.find(f => f.id === formData.facilityId)?.name || 'Kein Standort'}
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">Standort suchen & wählen</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    disabled={isFieldDisabled('facilityId')}
+                    value={facilitySearch}
+                    onChange={(e) => {
+                      setFacilitySearch(e.target.value);
+                      setIsDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    placeholder="Standort suchen..."
+                    className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm outline-none disabled:opacity-50"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">▼</span>
                 </div>
-                {isDropdownOpen && (
-                  <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-slate-900 border rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto">
+                {isDropdownOpen && !isFieldDisabled('facilityId') && (
+                  <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto">
+                    <button 
+                      onClick={() => { setFormData({...formData, facilityId: ''}); setFacilitySearch('Kein Standort'); setIsDropdownOpen(false); }}
+                      className="w-full text-left px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-sm border-b dark:border-slate-800 text-slate-400"
+                    >
+                      Kein Standort
+                    </button>
                     {filteredFacilities.map(f => (
-                      <button key={f.id} onClick={() => { setFormData({...formData, facilityId: f.id}); setIsDropdownOpen(false); }} className="w-full text-left px-5 py-3 hover:bg-slate-50 font-bold text-sm border-b">{f.name}</button>
+                      <button 
+                        key={f.id} 
+                        onClick={() => { setFormData({...formData, facilityId: f.id}); setFacilitySearch(f.name); setIsDropdownOpen(false); }} 
+                        className={`w-full text-left px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-sm border-b dark:border-slate-800 last:border-0 ${formData.facilityId === f.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                      >
+                        {f.name}
+                      </button>
                     ))}
+                    {filteredFacilities.length === 0 && (
+                      <div className="px-5 py-3 text-slate-400 text-xs italic">Kein Standort gefunden</div>
+                    )}
                   </div>
                 )}
               </div>

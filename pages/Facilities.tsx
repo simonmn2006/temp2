@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { TranslationSet, Facility, FacilityType, CookingMethod, User, AuditLog } from '../types';
+import { TranslationSet, Facility, FacilityType, CookingMethod, User, AuditLog, AdminTab, Refrigerator } from '../types';
 
 interface FacilitiesPageProps {
   t: TranslationSet;
@@ -9,11 +9,13 @@ interface FacilitiesPageProps {
   facilityTypes: FacilityType[];
   cookingMethods: CookingMethod[];
   users: User[];
+  fridges: Refrigerator[];
   onLog: (action: AuditLog['action'], entity: string, details: string) => void;
   onSync: (facility: Facility) => void;
+  onTabChange: (tab: AdminTab) => void;
 }
 
-export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, setFacilities, facilityTypes, cookingMethods, users, onLog, onSync }) => {
+export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, setFacilities, facilityTypes, cookingMethods, users, fridges, onLog, onSync, onTabChange }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null);
@@ -80,8 +82,12 @@ export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, s
 
   const handleSave = () => {
     const errors = new Set<string>();
-    if (!formData.name.trim()) errors.add('name');
+    const trimmedName = formData.name.trim();
+
+    if (!trimmedName) errors.add('name');
     if (!formData.supervisorId) errors.add('supervisorId');
+    if (!formData.typeId) errors.add('typeId');
+    if (!formData.cookingMethodId) errors.add('cookingMethodId');
 
     if (errors.size > 0) {
       setInvalidFields(errors);
@@ -89,7 +95,19 @@ export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, s
       return;
     }
 
-    const trimmedName = formData.name.trim();
+    // Strict Case-Insensitive Uniqueness Check
+    const nameExists = facilities.some(f => 
+      f.name.toLowerCase() === trimmedName.toLowerCase() && 
+      (!editingFacility || f.id !== editingFacility.id)
+    );
+
+    if (nameExists) {
+      errors.add('name');
+      setInvalidFields(errors);
+      showAlert(`Der Standort "${trimmedName}" existiert bereits (Eindeutigkeit erforderlich).`, 'error');
+      return;
+    }
+
     let finalFac: Facility;
 
     if (editingFacility) {
@@ -105,11 +123,10 @@ export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, s
         refrigeratorCount: 0
       };
       setFacilities(prev => [...prev, finalFac]);
-      onLog('CREATE', 'FACILITIES', `Neuen Standort '${trimmedName}' erstellt`);
+      onLog('CREATE', 'FACILITIES', `Neuer Standort '${trimmedName}' erstellt`);
       showAlert(`Standort "${trimmedName}" erstellt.`, 'success');
     }
 
-    // SYNC TO BACKEND
     onSync(finalFac);
     setIsModalOpen(false);
   };
@@ -159,6 +176,9 @@ export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, s
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredFacilities.map((f) => {
           const supervisor = supervisors.find(s => s.id === f.supervisorId);
+          // CALCULATE LIVE REFRIGERATOR COUNT
+          const liveFridgeCount = fridges.filter(r => r.facilityId === f.id).length;
+          
           return (
             <div key={f.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 hover:shadow-xl transition-all group text-left relative overflow-hidden">
               <div className="absolute top-6 right-6 flex space-x-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -182,8 +202,8 @@ export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, s
                  </div>
               </div>
               <div className="pt-6 border-t border-slate-50 dark:border-slate-800 flex items-center justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                <span>{f.refrigeratorCount} Kühlschränke</span>
-                <span className="text-blue-600 font-black">Details ➞</span>
+                <span>{liveFridgeCount} Kühlschränke</span>
+                <button onClick={() => onTabChange(AdminTab.REFRIGERATORS)} className="text-blue-600 font-black hover:underline cursor-pointer">Details ➞</button>
               </div>
             </div>
           );
@@ -221,7 +241,7 @@ export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, s
 
               <div className="relative" ref={supDropdownRef}>
                 <label className="block text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-widest px-1">Supervisor</label>
-                <div className="flex items-center px-5 py-4 rounded-[1.25rem] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 h-[56px]" onClick={() => setIsSupDropdownOpen(true)}>
+                <div className={`flex items-center px-5 py-4 rounded-[1.25rem] bg-slate-50 dark:bg-slate-800 border h-[56px] ${invalidFields.has('supervisorId') ? 'border-rose-500 ring-4 ring-rose-500/10' : 'border-slate-200 dark:border-slate-700'}`} onClick={() => setIsSupDropdownOpen(true)}>
                   <input type="text" value={supervisorSearch} onChange={e => {setSupervisorSearch(e.target.value); setIsSupDropdownOpen(true);}} placeholder="Supervisor suchen..." className="flex-1 bg-transparent font-bold text-sm outline-none" />
                   <span className="text-slate-400 text-xs ml-2">▼</span>
                 </div>
@@ -237,14 +257,14 @@ export const FacilitiesPage: React.FC<FacilitiesPageProps> = ({ t, facilities, s
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-widest px-1">Typ</label>
-                  <select value={formData.typeId} onChange={e => setFormData({...formData, typeId: e.target.value})} className="w-full px-5 py-4 rounded-[1.25rem] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm h-[56px]">
+                  <select value={formData.typeId} onChange={e => setFormData({...formData, typeId: e.target.value})} className={getFieldClass('typeId')}>
                     <option value="">Wählen...</option>
                     {facilityTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-widest px-1">Garmethode</label>
-                  <select value={formData.cookingMethodId} onChange={e => setFormData({...formData, cookingMethodId: e.target.value})} className="w-full px-5 py-4 rounded-[1.25rem] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-sm h-[56px]">
+                  <select value={formData.cookingMethodId} onChange={e => setFormData({...formData, cookingMethodId: e.target.value})} className={getFieldClass('cookingMethodId')}>
                     <option value="">Wählen...</option>
                     {cookingMethods.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
