@@ -33,71 +33,133 @@ async function query(sql, params) {
     }
 }
 
+// Internal function to send Alert Email
+async function sendAlertEmail(config, alert, recipients) {
+    if (!config || !recipients.length) return;
+    
+    const transporter = nodemailer.createTransport({
+        host: config.host,
+        port: parseInt(config.port),
+        secure: config.secure || config.port === '465',
+        auth: { user: config.user, pass: config.pass },
+        tls: { rejectUnauthorized: false }
+    });
+
+    const htmlContent = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 24px; overflow: hidden;">
+            <div style="background: #e11d48; padding: 30px; text-align: center; color: white;">
+                <h1 style="margin: 0; font-size: 24px; text-transform: uppercase;">⚠️ Temperatur Alarm</h1>
+                <p style="margin: 5px 0 0 0; opacity: 0.8;">Kritische Abweichung festgestellt</p>
+            </div>
+            <div style="padding: 40px; background: white; color: #1e293b;">
+                <p style="font-size: 16px; margin-bottom: 20px;">Hallo,</p>
+                <p style="line-height: 1.6;">Am Standort <b>${alert.facilityName}</b> wurde ein Grenzwert überschritten:</p>
+                
+                <div style="background: #fff1f2; border: 1px solid #fecdd3; padding: 20px; border-radius: 16px; margin: 20px 0;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr><td style="color: #64748b; font-size: 12px; text-transform: uppercase;">Gerät/Menü</td><td style="font-weight: bold;">${alert.targetName}</td></tr>
+                        <tr><td style="color: #64748b; font-size: 12px; text-transform: uppercase;">Prüfpunkt</td><td style="font-weight: bold;">${alert.checkpointName}</td></tr>
+                        <tr><td style="color: #64748b; font-size: 12px; text-transform: uppercase;">Gemessen</td><td style="color: #e11d48; font-weight: 900; font-size: 20px;">${alert.value.toFixed(1)}°C</td></tr>
+                        <tr><td style="color: #64748b; font-size: 12px; text-transform: uppercase;">Limit</td><td style="font-weight: bold;">${alert.min}°C bis ${alert.max}°C</td></tr>
+                    </table>
+                </div>
+
+                <p style="font-size: 12px; color: #94a3b8; margin-top: 30px;">
+                    Erfasst von: ${alert.userName}<br>
+                    Zeitpunkt: ${new Date(alert.timestamp).toLocaleString('de-DE')}
+                </p>
+            </div>
+            <div style="background: #f8fafc; padding: 20px; text-align: center; font-size: 11px; color: #94a3b8;">
+                Dies ist eine automatische Benachrichtigung vom Gourmetta HACCP Portal.
+            </div>
+        </div>
+    `;
+
+    try {
+        await transporter.sendMail({
+            from: config.user, // Strato compatibility: from must match authenticated user
+            to: recipients.join(', '),
+            subject: `🚨 ALARM: ${alert.targetName} @ ${alert.facilityName}`,
+            html: htmlContent
+        });
+        console.log("✅ Alert emails sent successfully.");
+    } catch (err) {
+        console.error("❌ Failed to send alert emails:", err.message);
+    }
+}
+
+// Internal function to send Alert Telegram
+async function sendAlertTelegram(config, alert) {
+    if (!config?.botToken || !config?.chatId) return;
+
+    const message = `🚨 *TEMPERATUR ALARM*\n\n` +
+                    `📍 *Standort:* ${alert.facilityName}\n` +
+                    `❄️ *Gerät:* ${alert.targetName}\n` +
+                    `🔍 *Punkt:* ${alert.checkpointName}\n\n` +
+                    `🔥 *Wert:* ${alert.value.toFixed(1)}°C\n` +
+                    `📏 *Soll:* ${alert.min}° bis ${alert.max}°C\n\n` +
+                    `👤 *Mitarbeiter:* ${alert.userName}\n` +
+                    `⏰ *Zeit:* ${new Date(alert.timestamp).toLocaleTimeString('de-DE')}`;
+
+    try {
+        await fetch(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: config.chatId,
+                text: message,
+                parse_mode: 'Markdown'
+            })
+        });
+        console.log("✅ Telegram alert sent.");
+    } catch (err) {
+        console.error("❌ Failed to send Telegram alert:", err.message);
+    }
+}
+
 // Test Telegram Bot Endpoint
 app.post('/api/test-telegram', async (req, res) => {
     const { token, chatId } = req.body;
     try {
         const botRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
         const botData = await botRes.json();
-        
         if (!botData.ok) throw new Error(botData.description || 'Invalid Token');
 
         if (chatId) {
-            const msgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: chatId,
-                    text: `🛡️ *Gourmetta HACCP Portal*\nTest-Nachricht: Der Bot ist erfolgreich verknüpft!`,
+                    text: `🛡️ *Gourmetta HACCP Portal*\nTest-Nachricht: Der Bot ist bereit für Alarme!`,
                     parse_mode: 'Markdown'
                 })
             });
-            const msgData = await msgRes.json();
-            if (!msgData.ok) throw new Error(msgData.description || 'Message failed');
         }
-
         res.json({ success: true, bot: botData.result.username });
     } catch (err) {
-        console.error("Telegram Test Error:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Test Email Endpoint (Optimized for Strato/Gmail)
+// Test Email Endpoint
 app.post('/api/test-email', async (req, res) => {
-    const { host, port, user, pass, from, secure } = req.body;
+    const { host, port, user, pass, secure } = req.body;
     try {
-        // Strato usually needs port 465 (secure: true) or 587 (secure: false)
         const transporter = nodemailer.createTransport({
-            host, 
-            port: parseInt(port), 
-            secure: secure || port === '465', 
+            host, port: parseInt(port), secure: secure || port === '465',
             auth: { user, pass },
-            tls: {
-                rejectUnauthorized: false // Helps with some server certificates
-            }
+            tls: { rejectUnauthorized: false }
         });
-
         await transporter.verify();
-
-        const info = await transporter.sendMail({
-            from: from || user, // Strato MUST have 'from' identical to 'user'
-            to: user, // Send to self for testing
+        await transporter.sendMail({
+            from: user,
+            to: user,
             subject: "🛡️ Gourmetta SMTP Test",
-            html: `
-                <div style="font-family: sans-serif; padding: 40px; background: #f8fafc; color: #1e293b; border-radius: 24px;">
-                    <h1 style="color: #2563eb; margin-bottom: 20px;">✅ SMTP Verbindung Erfolgreich</h1>
-                    <p>Ihre E-Mail Konfiguration für <b>${host}</b> ist korrekt eingestellt.</p>
-                    <hr style="border: 1px solid #e2e8f0; margin: 20px 0;" />
-                    <p style="font-size: 12px; color: #94a3b8;">Gesendet am: ${new Date().toLocaleString('de-DE')}</p>
-                </div>
-            `
+            html: `<h1 style="color: #2563eb;">✅ SMTP OK</h1><p>Ihre Konfiguration für <b>${host}</b> funktioniert.</p>`
         });
-
-        console.log("Email sent: %s", info.messageId);
         res.json({ success: true });
     } catch (err) {
-        console.error("SMTP Test Error Details:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -149,12 +211,46 @@ app.get('/api/readings', async (req, res) => {
 });
 
 app.post('/api/readings', async (req, res) => {
-    const { id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason, alertData, smtpConfig } = req.body;
+    const { id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason, alertData, smtpConfig, telegramConfig } = req.body;
     try {
+        // 1. Save Reading to Database
         await query('INSERT INTO readings (id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
         [id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason]);
+
+        // 2. Handle Automatic Alarms if reading is out of range
+        if (alertData) {
+            // Find all eligible alert recipients for this facility
+            const alertUsers = await query(`
+                SELECT email, telegramAlerts FROM users 
+                WHERE (emailAlerts = 1 OR telegramAlerts = 1) 
+                AND (allFacilitiesAlerts = 1 OR facilityId = ?)
+                AND status = 'Active'`, 
+            [facilityId]);
+
+            // Filter for Email recipients
+            const emailRecipients = alertUsers
+                .filter(u => u.email && u.email.includes('@'))
+                .map(u => u.email);
+
+            // Filter for Telegram activation check
+            const hasTelegramRecipient = alertUsers.some(u => u.telegramAlerts === 1);
+
+            // Send via SMTP
+            if (emailRecipients.length > 0 && smtpConfig) {
+                sendAlertEmail(smtpConfig, alertData, emailRecipients);
+            }
+
+            // Send via Telegram (Global ID)
+            if (hasTelegramRecipient && telegramConfig) {
+                sendAlertTelegram(telegramConfig, alertData);
+            }
+        }
+
         res.sendStatus(200);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        console.error("Readings POST Error:", err.message);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 const PORT = process.env.PORT || 3001;

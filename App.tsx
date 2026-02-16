@@ -154,6 +154,9 @@ const App: React.FC = () => {
     try {
         const smtpStr = localStorage.getItem('gourmetta_smtp');
         const smtpConfig = smtpStr ? JSON.parse(smtpStr) : null;
+        
+        const telegramStr = localStorage.getItem('gourmetta_telegram');
+        const telegramConfig = telegramStr ? JSON.parse(telegramStr) : null;
 
         await fetch(`${API_BASE}/${endpoint}`, {
             method: 'POST',
@@ -161,7 +164,8 @@ const App: React.FC = () => {
             body: JSON.stringify({
                 ...data,
                 alertData: alertContext,
-                smtpConfig: smtpConfig ? { ...smtpConfig, secure: smtpConfig.port === '465' } : null
+                smtpConfig: smtpConfig ? { ...smtpConfig, secure: smtpConfig.port === '465' } : null,
+                telegramConfig: telegramConfig
             })
         });
     } catch (e) {
