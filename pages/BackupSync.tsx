@@ -1,6 +1,16 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { TranslationSet, User, Facility, AuditLog, FacilityType, CookingMethod } from '../types';
 
+interface SmtpConfig {
+  host: string;
+  port: string;
+  encryption: string;
+  user: string;
+  pass: string;
+  from: string;
+  secure: boolean;
+}
+
 interface BackupSyncPageProps {
   t: TranslationSet;
   users: User[];
@@ -20,19 +30,30 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
   const [testSuccessTelegram, setTestSuccessTelegram] = useState<boolean | null>(null);
   const [isTestLoadingEmail, setIsTestLoadingEmail] = useState(false);
   const [testSuccessEmail, setTestSuccessEmail] = useState<boolean | null>(null);
-  const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [importStatus, setImportStatus] = useState<{msg: string, type: 'success' | 'error' | null}>({ msg: '', type: null });
 
   const [recipientSearch, setRecipientSearch] = useState('');
-  const [activeFacilityPicker, setActiveFacilityPicker] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [telegramConfig, setTelegramConfig] = useState({ botToken: '', chatId: '', enabled: true });
-  
-  // Persistent SMTP Config in LocalStorage for now (usually in DB)
-  const [emailConfig, setEmailConfig] = useState(() => {
+  // Persistent SMTP Config with explicit interface typing
+  const [emailConfig, setEmailConfig] = useState<SmtpConfig>(() => {
     const saved = localStorage.getItem('gourmetta_smtp');
-    return saved ? JSON.parse(saved) : { host: 'smtp.gmail.com', port: '587', encryption: 'STARTTLS', user: '', pass: '', from: '', secure: false };
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse saved SMTP config", e);
+      }
+    }
+    return { 
+      host: 'smtp.gmail.com', 
+      port: '587', 
+      encryption: 'STARTTLS', 
+      user: '', 
+      pass: '', 
+      from: '', 
+      secure: false 
+    };
   });
 
   useEffect(() => {
@@ -41,14 +62,14 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
 
   useEffect(() => {
     if (!emailConfig.from || emailConfig.from === '') {
-      setEmailConfig(prev => ({ ...prev, from: prev.user }));
+      setEmailConfig((prev: SmtpConfig) => ({ ...prev, from: prev.user }));
     }
   }, [emailConfig.user]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setActiveFacilityPicker(null);
+        // Handle logic if needed
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -88,15 +109,6 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
     } catch (e) { console.error(e); }
   };
 
-  const toggleFacilitySubscription = (userId: string, facId: string) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id !== userId) return u;
-      const current = u.alertFacilityIds || [];
-      const next = current.includes(facId) ? current.filter(id => id !== facId) : [...current, facId];
-      return { ...u, alertFacilityIds: next };
-    }));
-  };
-
   const downloadCSV = (filename: string, csv: string) => {
     const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -106,15 +118,6 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const testTelegram = () => {
-    setIsTestLoadingTelegram(true);
-    setTimeout(() => {
-      setIsTestLoadingTelegram(false);
-      setTestSuccessTelegram(true);
-      setTimeout(() => setTestSuccessTelegram(null), 4000);
-    }, 1500);
   };
 
   const testEmail = async () => {
@@ -140,7 +143,7 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
         } else {
             throw new Error(data.error);
         }
-    } catch (err) {
+    } catch (err: any) {
         console.error(err);
         setTestSuccessEmail(false);
     } finally {
@@ -214,10 +217,6 @@ export const BackupSyncPage: React.FC<BackupSyncPageProps> = ({
                    <button onClick={() => toggleAlertChannel(user.id, 'emailAlerts')} className={`px-4 py-2.5 rounded-xl flex items-center space-x-2 transition-all ${user.emailAlerts ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
                      <span className="text-base">✉️</span>
                      <span className="text-[10px] font-black uppercase">E-Mail</span>
-                   </button>
-                   <button onClick={() => toggleAlertChannel(user.id, 'telegramAlerts')} className={`px-4 py-2.5 rounded-xl flex items-center space-x-2 transition-all ${user.telegramAlerts ? 'bg-blue-400 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-                     <span className="text-base">✈️</span>
-                     <span className="text-[10px] font-black uppercase">Telegram</span>
                    </button>
                 </div>
 
