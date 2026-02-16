@@ -28,6 +28,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
   const [filterType, setFilterType] = useState<'all' | 'refrigerator' | 'menu' | 'forms' | 'supervisor_audit'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSupId, setSelectedSupId] = useState<string | null>(null);
+  const [selectedResponse, setSelectedResponse] = useState<FormResponse | null>(null);
 
   const isPrivileged = currentUser.role === 'Admin' || currentUser.role === 'SuperAdmin';
   
@@ -41,7 +42,6 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
     return fac ? fac.name : `ID: ${id} (Gelöscht)`;
   };
 
-  // --- Supervisor Audit Ranking Logic ---
   const supervisorStats = useMemo(() => {
     if (!isPrivileged) return [];
     
@@ -82,7 +82,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
         totalChecked: data.totalResponses,
         breakdown: data.facilityBreakdown
       }))
-      .sort((a, b) => b.total - a.total); // Manager with most show-up is first
+      .sort((a, b) => b.total - a.total);
   }, [formResponses, dateRange, facilities, users, isPrivileged]);
 
   const selectedSupervisorData = useMemo(() => {
@@ -125,6 +125,8 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
         const usr = users.find(u => u.id === first.userId);
         entries.push({
           id: `TEMP-${first.id}`,
+          rawId: first.id,
+          type: 'READING',
           timestamp: first.timestamp,
           displayDate: dateObj.toLocaleDateString('de-DE'),
           displayTime: dateObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
@@ -152,6 +154,8 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
         const template = forms.find(f => f.id === fr.formId);
         entries.push({
           id: fr.id,
+          rawId: fr.id,
+          type: 'FORM',
           timestamp: fr.timestamp,
           displayDate: dateObj.toLocaleDateString('de-DE'),
           displayTime: dateObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
@@ -160,7 +164,8 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
           typeLabel: 'CHECKLISTE',
           objectName: template?.title || 'Formular',
           details: `Besuch: ${fr.answers['SUPERVISOR_VISIT'] === 'YES' ? 'JA' : 'NEIN'} | ${Object.keys(fr.answers).length - 1} Antworten`,
-          status: '📝 ERFASST'
+          status: '📝 ERFASST',
+          rawResponse: fr
         });
       });
     }
@@ -168,11 +173,107 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
     return entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }, [readings, formResponses, dateRange, filterType, searchQuery, users, facilities, fridges, menus, forms, myFacilityIds]);
 
+  // --- EXPORT FUNCTIONS ---
+  const exportListToCSV = () => {
+    const headers = ['Datum', 'Zeit', 'Standort', 'Nutzer', 'Typ', 'Gegenstand', 'Messwerte/Details', 'Status'];
+    const rows = reportEntries.map(e => [
+      e.displayDate, e.displayTime, `"${e.facility}"`, `"${e.user}"`, e.typeLabel, `"${e.objectName}"`, `"${e.details}"`, e.status
+    ]);
+    const content = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['\ufeff', content], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Gourmetta_Report_${dateRange.start}_${dateRange.end}.csv`;
+    link.click();
+  };
+
+  const exportListToWord = () => {
+    let html = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>Report</title></head>
+      <body style="font-family: sans-serif;">
+        <h1 style="color: #2563eb;">Gourmetta HACCP Bericht</h1>
+        <p>Zeitraum: ${dateRange.start} bis ${dateRange.end}</p>
+        <table border="1" style="width:100%; border-collapse: collapse;">
+          <tr style="background: #f1f5f9;">
+            <th>Datum</th><th>Zeit</th><th>Standort</th><th>Nutzer</th><th>Typ</th><th>Gegenstand</th><th>Details</th><th>Status</th>
+          </tr>
+          ${reportEntries.map(e => `
+            <tr>
+              <td>${e.displayDate}</td><td>${e.displayTime}</td><td>${e.facility}</td><td>${e.user}</td>
+              <td>${e.typeLabel}</td><td>${e.objectName}</td><td>${e.details}</td><td>${e.status}</td>
+            </tr>
+          `).join('')}
+        </table>
+      </body></html>
+    `;
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Gourmetta_Report_${dateRange.start}_${dateRange.end}.doc`;
+    link.click();
+  };
+
+  const exportFormToWord = (fr: FormResponse) => {
+    const template = forms.find(f => f.id === fr.formId);
+    const usr = users.find(u => u.id === fr.userId);
+    const fac = facilities.find(f => f.id === fr.facilityId);
+    const dateStr = new Date(fr.timestamp).toLocaleString('de-DE');
+
+    let html = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>Form Report</title></head>
+      <body style="font-family: sans-serif; padding: 40px;">
+        <h1 style="color: #2563eb; text-transform: uppercase; border-bottom: 2px solid #2563eb; padding-bottom: 10px;">${template?.title || 'Checkliste'}</h1>
+        <table border="0" style="width:100%; margin-bottom: 30px;">
+          <tr><td><b>Standort:</b></td><td>${fac?.name || 'N/A'}</td></tr>
+          <tr><td><b>Mitarbeiter:</b></td><td>${usr?.name || 'N/A'}</td></tr>
+          <tr><td><b>Zeitpunkt:</b></td><td>${dateStr}</td></tr>
+        </table>
+        
+        <h3 style="background: #f8fafc; padding: 10px; border-radius: 8px;">Supervisor Audit</h3>
+        <p>Hat der Supervisor persönlich am Standort vorbeigeschaut? <b>${fr.answers['SUPERVISOR_VISIT'] === 'YES' ? 'JA' : 'NEIN'}</b></p>
+        
+        <h3 style="background: #f8fafc; padding: 10px; border-radius: 8px;">Prüfpunkte</h3>
+        <table border="1" style="width:100%; border-collapse: collapse;">
+          <tr style="background: #f1f5f9;">
+            <th style="padding: 10px;">Frage</th><th style="padding: 10px;">Antwort</th>
+          </tr>
+          ${template?.questions.map(q => `
+            <tr>
+              <td style="padding: 10px;">${q.text}</td>
+              <td style="padding: 10px; font-weight: bold;">${fr.answers[q.id] || 'N/A'}</td>
+            </tr>
+          `).join('') || ''}
+        </table>
+        
+        ${fr.signature ? `
+          <h3 style="margin-top: 40px;">Digitale Unterschrift</h3>
+          <img src="${fr.signature}" style="max-width: 300px; border: 1px solid #e2e8f0; border-radius: 8px;" />
+        ` : ''}
+      </body></html>
+    `;
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Checkliste_${template?.title || 'HACCP'}_${fr.id}.doc`;
+    link.click();
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left relative">
-      <header className="no-print">
-        <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Berichte & Archiv</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">HACCP-Zentrale & Supervisor-Monitoring</p>
+      <header className="no-print flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Berichte & Archiv</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">HACCP-Zentrale & Supervisor-Monitoring</p>
+        </div>
+        <div className="flex space-x-2">
+           <button onClick={exportListToCSV} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Export CSV</button>
+           <button onClick={exportListToWord} className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Export Word</button>
+        </div>
       </header>
 
       <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-6 no-print">
@@ -208,7 +309,6 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
         <div className="space-y-12 animate-in slide-in-from-bottom-4">
            {!selectedSupId ? (
              <>
-               {/* RANKING LEADERBOARD */}
                <div className="bg-slate-900 text-white p-12 rounded-[4rem] shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-12 opacity-10 pointer-events-none text-[12rem]">🏆</div>
                   <h3 className="text-3xl font-black uppercase tracking-tighter mb-12 italic border-l-4 border-blue-500 pl-6">Supervisor Ranking (Gesamtbesuche)</h3>
@@ -304,7 +404,6 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
                          </thead>
                          <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
                             {selectedSupervisorData && Object.entries(selectedSupervisorData.breakdown).map(([facId, value]) => {
-                               // Fix: Explicitly cast 'value' as any to avoid 'unknown' type error when accessing yes/no properties.
                                const stats = value as any;
                                const ratio = (stats.yes + stats.no) > 0 ? Math.round((stats.yes / (stats.yes + stats.no)) * 100) : 0;
                                return (
@@ -369,15 +468,93 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ t, currentUser, readin
                        <p className="text-xs font-black font-mono text-slate-500 leading-relaxed truncate max-w-xs">{row.details}</p>
                     </td>
                     <td className="px-8 py-6 text-right">
-                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase border ${row.status.includes('OK') ? 'border-emerald-100 bg-emerald-50 text-emerald-600' : 'border-rose-100 bg-rose-50 text-rose-600'}`}>
-                        {row.status}
-                      </span>
+                       <div className="flex items-center justify-end space-x-2">
+                         <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase border ${row.status.includes('OK') ? 'border-emerald-100 bg-emerald-50 text-emerald-600' : 'border-rose-100 bg-rose-50 text-rose-600'}`}>
+                           {row.status}
+                         </span>
+                         {row.type === 'FORM' && (
+                           <button onClick={() => setSelectedResponse(row.rawResponse)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">🔍</button>
+                         )}
+                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* --- FORM RESPONSE DETAIL VIEW MODAL --- */}
+      {selectedResponse && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 z-[200] animate-in fade-in duration-300">
+           <div className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] rounded-[3.5rem] shadow-2xl flex flex-col overflow-hidden border border-white/5 relative">
+              <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
+                 <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg">📝</div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">{forms.find(f => f.id === selectedResponse.formId)?.title || 'HACCP Protokoll'}</h3>
+                      <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">{new Date(selectedResponse.timestamp).toLocaleString('de-DE')}</p>
+                    </div>
+                 </div>
+                 <div className="flex items-center space-x-3">
+                   <button onClick={() => exportFormToWord(selectedResponse)} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:scale-105 transition-all">Export Word</button>
+                   <button onClick={() => setSelectedResponse(null)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 font-bold">✕</button>
+                 </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-8 lg:p-14 space-y-12 custom-scrollbar text-left">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-10 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Standort</p>
+                       <p className="text-xl font-black text-slate-900 dark:text-white uppercase">{getFacilityDisplayName(selectedResponse.facilityId)}</p>
+                    </div>
+                    <div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Zuständiger Mitarbeiter</p>
+                       <p className="text-xl font-black text-slate-900 dark:text-white uppercase">{users.find(u => u.id === selectedResponse.userId)?.name || 'Unbekannt'}</p>
+                    </div>
+                 </div>
+
+                 <div className="p-8 rounded-[2.5rem] bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 flex items-center justify-between">
+                    <div className="flex items-center space-x-6">
+                       <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-2xl flex items-center justify-center text-2xl shadow-sm">🛡️</div>
+                       <div>
+                          <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Supervisor-Präsenzprüfung</p>
+                          <p className="text-lg font-black text-slate-900 dark:text-white">War der Supervisor heute persönlich am Standort?</p>
+                       </div>
+                    </div>
+                    <span className={`px-8 py-3 rounded-2xl font-black text-sm uppercase ${selectedResponse.answers['SUPERVISOR_VISIT'] === 'YES' ? 'bg-emerald-500 text-white shadow-xl' : 'bg-rose-500 text-white shadow-xl'}`}>
+                       {selectedResponse.answers['SUPERVISOR_VISIT'] === 'YES' ? 'JA' : 'NEIN'}
+                    </span>
+                 </div>
+
+                 <div className="space-y-8">
+                    <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-[0.2em] px-1">Protokollierte Prüfschritte</h4>
+                    <div className="space-y-4">
+                       {forms.find(f => f.id === selectedResponse.formId)?.questions.map((q, i) => (
+                         <div key={q.id} className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center space-x-4">
+                               <span className="w-8 h-8 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-xs font-black text-slate-400 border border-slate-100 shadow-sm">{i+1}</span>
+                               <p className="font-bold text-slate-800 dark:text-slate-200">{q.text}</p>
+                            </div>
+                            <span className="font-black text-blue-600 uppercase tracking-widest text-sm bg-white dark:bg-slate-700 px-4 py-2 rounded-xl shadow-sm">
+                               {selectedResponse.answers[q.id] || '---'}
+                            </span>
+                         </div>
+                       ))}
+                    </div>
+                 </div>
+
+                 {selectedResponse.signature && (
+                    <div className="pt-10 border-t border-slate-100 dark:border-slate-800">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Rechtsgültige Digitale Signatur</p>
+                       <div className="bg-slate-50 dark:bg-slate-800 rounded-[2rem] p-8 inline-block shadow-inner">
+                          <img src={selectedResponse.signature} alt="Signatur" className="max-h-32 grayscale brightness-90 contrast-125" />
+                       </div>
+                    </div>
+                 )}
+              </div>
+           </div>
         </div>
       )}
     </div>

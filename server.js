@@ -9,7 +9,7 @@ dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increase limit for signatures
 
 const pool = mariadb.createPool({
      host: process.env.DB_HOST || 'localhost', 
@@ -77,7 +77,7 @@ async function sendAlertEmail(config, alert, recipients) {
 
     try {
         await transporter.sendMail({
-            from: config.user, // Strato compatibility: from must match authenticated user
+            from: config.user, 
             to: recipients.join(', '),
             subject: `🚨 ALARM: ${alert.targetName} @ ${alert.facilityName}`,
             html: htmlContent
@@ -213,44 +213,49 @@ app.get('/api/readings', async (req, res) => {
 app.post('/api/readings', async (req, res) => {
     const { id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason, alertData, smtpConfig, telegramConfig } = req.body;
     try {
-        // 1. Save Reading to Database
         await query('INSERT INTO readings (id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
         [id, targetId, targetType, checkpointName, value, timestamp, userId, facilityId, reason]);
 
-        // 2. Handle Automatic Alarms if reading is out of range
         if (alertData) {
-            // Find all eligible alert recipients for this facility
             const alertUsers = await query(`
-                SELECT email, telegramAlerts FROM users 
+                SELECT email, telegramAlerts, emailAlerts FROM users 
                 WHERE (emailAlerts = 1 OR telegramAlerts = 1) 
                 AND (allFacilitiesAlerts = 1 OR facilityId = ?)
                 AND status = 'Active'`, 
             [facilityId]);
 
-            // Filter for Email recipients
             const emailRecipients = alertUsers
-                .filter(u => u.email && u.email.includes('@'))
+                .filter(u => u.emailAlerts === 1 && u.email && u.email.includes('@'))
                 .map(u => u.email);
 
-            // Filter for Telegram activation check
             const hasTelegramRecipient = alertUsers.some(u => u.telegramAlerts === 1);
 
-            // Send via SMTP
             if (emailRecipients.length > 0 && smtpConfig) {
                 sendAlertEmail(smtpConfig, alertData, emailRecipients);
             }
 
-            // Send via Telegram (Global ID)
             if (hasTelegramRecipient && telegramConfig) {
                 sendAlertTelegram(telegramConfig, alertData);
             }
         }
-
         res.sendStatus(200);
-    } catch (err) { 
-        console.error("Readings POST Error:", err.message);
-        res.status(500).json({ error: err.message }); 
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/forms', async (req, res) => {
+    try {
+        const rows = await query('SELECT * FROM form_responses ORDER BY timestamp DESC');
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/forms', async (req, res) => {
+    const { id, formId, facilityId, userId, timestamp, answers, signature } = req.body;
+    try {
+        await query('INSERT INTO form_responses (id, formId, facilityId, userId, timestamp, answers, signature) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+        [id, formId, facilityId, userId, timestamp, JSON.stringify(answers), signature]);
+        res.sendStatus(200);
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 const PORT = process.env.PORT || 3001;

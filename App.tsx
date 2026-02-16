@@ -108,10 +108,11 @@ const App: React.FC = () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 1500);
         
-        const [uRes, fRes, rRes] = await Promise.all([
+        const [uRes, fRes, rRes, frRes] = await Promise.all([
           fetch(`${API_BASE}/users`, { signal: controller.signal }),
           fetch(`${API_BASE}/facilities`, { signal: controller.signal }),
-          fetch(`${API_BASE}/readings`, { signal: controller.signal })
+          fetch(`${API_BASE}/readings`, { signal: controller.signal }),
+          fetch(`${API_BASE}/forms`, { signal: controller.signal })
         ]);
         
         clearTimeout(timeoutId);
@@ -131,6 +132,7 @@ const App: React.FC = () => {
             }
         }
         if (rRes.ok) setReadings(await rRes.json());
+        if (frRes.ok) setFormResponses(await frRes.json());
         setBackendError(false);
       } catch (err) {
         setBackendError(true);
@@ -153,7 +155,10 @@ const App: React.FC = () => {
       setFacilities(nextFacs);
       localStorage.setItem('gourmetta_cache_facilities', JSON.stringify(nextFacs));
     }
-    if (type === 'reading') setReadings(prev => [data, ...prev]);
+    if (type === 'reading') {
+        setReadings(prev => [data, ...prev]);
+        if (alertContext) setAlerts(prev => [...prev, alertContext]);
+    }
     if (type === 'form') setFormResponses(prev => [data, ...prev]);
 
     try {
@@ -256,8 +261,40 @@ const App: React.FC = () => {
       case AdminTab.AUDIT_LOGS: return <AuditLogsPage t={t} logs={auditLogs} />;
       default: return (
           <div className="space-y-10 animate-in fade-in duration-700 text-left pb-16">
+            <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center md:items-start justify-between gap-8 relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full -mr-20 -mt-20 blur-3xl pointer-events-none" />
+               <div className="flex flex-col md:flex-row items-center space-y-6 md:space-y-0 md:space-x-8 z-10">
+                  <div className="w-24 h-24 bg-slate-50 dark:bg-slate-800 rounded-[2rem] flex items-center justify-center p-4 shadow-inner">
+                     <img src={LOGO_URL} className="w-full h-full object-contain" alt="Gourmetta Logo" />
+                  </div>
+                  <div className="text-center md:text-left">
+                     <h1 className="text-4xl font-black text-slate-900 dark:text-white italic tracking-tighter leading-none mb-2 uppercase">gourmetta</h1>
+                     <span className="text-2xl font-bold text-slate-400 tracking-tight">Willkommen, {currentUser.name}</span>
+                  </div>
+               </div>
+               <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 p-8 rounded-[2.5rem] flex flex-col justify-center items-center text-center shadow-inner relative group min-w-[240px] z-10">
+                  <div className="absolute top-2 right-4 text-[8px] font-black text-emerald-500/50 uppercase tracking-widest">Gourmetta Go Green</div>
+                  <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center text-3xl mb-3 shadow-md group-hover:scale-110 transition-transform duration-500">🍃</div>
+                  <div className="space-y-1">
+                     <p className="text-[11px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-tight">Systemweiter Beitrag</p>
+                     <div className="flex items-baseline justify-center space-x-1">
+                        <span className="text-3xl font-black text-emerald-700 dark:text-emerald-300">{globalGreenImpact.totalA4}</span>
+                        <span className="text-[10px] font-black text-emerald-600/60 uppercase">Seiten gespart</span>
+                     </div>
+                  </div>
+               </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">🏢</span><span className="text-3xl font-black text-blue-600">{facilities.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Standorte</p></div>
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">👥</span><span className="text-3xl font-black text-indigo-600">{users.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Benutzer</p></div>
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">📄</span><span className="text-3xl font-black text-emerald-600">{readings.length + formResponses.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Digitale Einträge</p></div>
+                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">🖨️</span><span className="text-3xl font-black text-slate-900">{globalGreenImpact.tonerSaved}</span><p className="text-[10px] font-black uppercase text-slate-400">Toner gespart</p></div>
+            </div>
+
+            {/* ALERTS SECTION - MOVED BELOW CARDS */}
             {activeAlerts.length > 0 && (
-              <div className="animate-in slide-in-from-top-4 duration-500">
+              <div className="animate-in slide-in-from-bottom-4 duration-500">
                 <div className="flex justify-between items-end mb-6">
                   <div>
                     <h2 className="text-2xl font-black text-rose-600 uppercase tracking-tighter italic">⚠️ Kritische Alarme</h2>
@@ -272,7 +309,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                    {activeAlerts.map(alert => (
-                     <div key={alert.id} className="bg-white dark:bg-slate-900 border-l-[12px] border-rose-500 rounded-[2.5rem] p-8 shadow-xl shadow-rose-500/10 flex flex-col justify-between relative overflow-hidden group">
+                     <div key={alert.id} className="bg-white dark:bg-slate-900 border-l-[12px] border-rose-500 rounded-[2.5rem] p-8 shadow-xl shadow-rose-500/10 flex flex-col justify-between relative overflow-hidden group text-left">
                         <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                            <span className="text-6xl">🚨</span>
                         </div>
@@ -315,35 +352,6 @@ const App: React.FC = () => {
               </div>
             )}
 
-            <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center md:items-start justify-between gap-8 relative overflow-hidden">
-               <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full -mr-20 -mt-20 blur-3xl pointer-events-none" />
-               <div className="flex flex-col md:flex-row items-center space-y-6 md:space-y-0 md:space-x-8 z-10">
-                  <div className="w-24 h-24 bg-slate-50 dark:bg-slate-800 rounded-[2rem] flex items-center justify-center p-4 shadow-inner">
-                     <img src={LOGO_URL} className="w-full h-full object-contain" alt="Gourmetta Logo" />
-                  </div>
-                  <div className="text-center md:text-left">
-                     <h1 className="text-4xl font-black text-slate-900 dark:text-white italic tracking-tighter leading-none mb-2 uppercase">gourmetta</h1>
-                     <span className="text-2xl font-bold text-slate-400 tracking-tight">Willkommen, {currentUser.name}</span>
-                  </div>
-               </div>
-               <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 p-8 rounded-[2.5rem] flex flex-col justify-center items-center text-center shadow-inner relative group min-w-[240px] z-10">
-                  <div className="absolute top-2 right-4 text-[8px] font-black text-emerald-500/50 uppercase tracking-widest">Gourmetta Go Green</div>
-                  <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center text-3xl mb-3 shadow-md group-hover:scale-110 transition-transform duration-500">🍃</div>
-                  <div className="space-y-1">
-                     <p className="text-[11px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-tight">Systemweiter Beitrag</p>
-                     <div className="flex items-baseline justify-center space-x-1">
-                        <span className="text-3xl font-black text-emerald-700 dark:text-emerald-300">{globalGreenImpact.totalA4}</span>
-                        <span className="text-[10px] font-black text-emerald-600/60 uppercase">Seiten gespart</span>
-                     </div>
-                  </div>
-               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">🏢</span><span className="text-3xl font-black text-blue-600">{facilities.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Standorte</p></div>
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">👥</span><span className="text-3xl font-black text-indigo-600">{users.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Benutzer</p></div>
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">📄</span><span className="text-3xl font-black text-emerald-600">{readings.length + formResponses.length}</span><p className="text-[10px] font-black uppercase text-slate-400">Digitale Einträge</p></div>
-                <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100"><span className="text-3xl block mb-2">🖨️</span><span className="text-3xl font-black text-slate-900">{globalGreenImpact.tonerSaved}</span><p className="text-[10px] font-black uppercase text-slate-400">Toner gespart</p></div>
-            </div>
             {backendError && (
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center space-x-3 text-amber-700 font-bold text-xs uppercase tracking-widest animate-pulse">
                 <span>⚠️</span><span>LOKALER VAULT AKTIV (Server Offline). Daten werden im Browser gesichert.</span>
@@ -362,7 +370,7 @@ const App: React.FC = () => {
         </DashboardLayout>
       ) : (
         <UserDashboardLayout t={translations[language]} activeTab={activeTab} onTabChange={setActiveTab} onLogout={handleLogout} language={language} onLanguageChange={setLanguage} assignments={assignments} currentUser={currentUser!} formResponses={formResponses} readings={readings} holidays={holidays} isOnline={!backendError} isSyncing={false} offlineQueueCount={0} facilities={facilities} facilityTypes={facilityTypes}>
-          {activeTab === 'user_workspace' ? <UserWorkspace t={translations[language]} user={currentUser} fridges={fridges} menus={menus} assignments={assignments} readings={readings} onSave={(d, alert) => { queueData('reading', d, alert); if(alert) setAlerts(prev => [...prev, alert]); }} fridgeTypes={fridgeTypes} cookingMethods={cookingMethods} facilities={facilities} excludedFacilities={excludedFacilities} facilityTypes={facilityTypes} onViolation={(alert) => setAlerts(prev => [...prev, alert])} formResponses={formResponses} /> :
+          {activeTab === 'user_workspace' ? <UserWorkspace t={translations[language]} user={currentUser} fridges={fridges} menus={menus} assignments={assignments} readings={readings} onSave={(d, alert) => { queueData('reading', d, alert); }} fridgeTypes={fridgeTypes} cookingMethods={cookingMethods} facilities={facilities} excludedFacilities={excludedFacilities} facilityTypes={facilityTypes} onViolation={(alert) => setAlerts(prev => [...prev, alert])} formResponses={formResponses} /> :
            activeTab === 'user_forms' ? <UserForms t={translations[language]} user={currentUser} forms={forms} assignments={assignments} excludedFacilities={excludedFacilities} facilityTypes={facilityTypes} facilities={facilities} onSave={(d) => queueData('form', d)} formResponses={formResponses} /> :
            <UserReports t={translations[language]} user={currentUser} readings={readings} menus={menus} fridges={fridges} fridgeTypes={fridgeTypes} cookingMethods={cookingMethods} facilities={facilities} assignments={assignments} formResponses={formResponses} excludedFacilities={excludedFacilities} forms={forms} facilityTypes={facilityTypes} />}
         </UserDashboardLayout>
