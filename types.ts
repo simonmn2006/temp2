@@ -155,6 +155,7 @@ export interface User {
   facilityId?: string;
   emailAlerts?: boolean;
   telegramAlerts?: boolean;
+  telegramChatId?: string;
   fridgeAlertsEnabled?: boolean;
   haccpAlertsEnabled?: boolean;
   alertFacilityIds?: string[]; // Custom list for Admins
