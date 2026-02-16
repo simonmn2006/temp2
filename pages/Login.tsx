@@ -37,7 +37,6 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
       return;
     }
 
-    // Check for Secure Context (Required for Push API)
     const isSecure = window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
     if (!isSecure) {
@@ -65,7 +64,7 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
 
   const showAlert = (text: string, type: 'error' | 'success' | 'info' = 'error') => {
     setAlertMsg({ text, type });
-    setTimeout(() => setAlertMsg(null), 7000); // Extended timeout for reading instructions
+    setTimeout(() => setAlertMsg(null), 7000); 
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -131,4 +130,77 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
               className={`relative w-20 h-20 mb-6 transition-all duration-500 hover:scale-110 active:scale-95 group flex items-center justify-center ${notificationStatus === 'granted' ? 'cursor-default' : 'cursor-pointer'}`}
               title={notificationStatus === 'denied' ? 'Benachrichtigungen blockiert' : 'Klicken für Push-Dienste'}
             >
-              <img src={LOGO_URL} className={`w-full h-full object-contain ${notificationStatus === 'default' ? 'animate-pulse'
+              <img 
+                src={LOGO_URL} 
+                className={`w-full h-full object-contain ${notificationStatus === 'default' ? 'animate-pulse' : ''} ${notificationStatus === 'denied' ? 'grayscale opacity-50' : ''}`} 
+                alt="Gourmetta Logo" 
+              />
+              {notificationStatus === 'granted' && (
+                <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-emerald-500 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white shadow-lg">✓</div>
+              )}
+              {notificationStatus === 'denied' && (
+                <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-rose-500 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white shadow-lg">!</div>
+              )}
+            </button>
+          </div>
+          <h1 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">gourmetta</h1>
+          <div className="mt-4 flex items-center space-x-2">
+             <div className={`w-2 h-2 rounded-full ${backendOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+               {backendOffline ? 'Lokaler Vault Modus' : 'Cloud Sync Aktiv'}
+             </span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6 flex-1">
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t.username}</label>
+              <input type="text" value={username} onChange={e => setUsername(e.target.value)} className={getFieldClass('username')} placeholder="Nutzername..." />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t.password}</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={getFieldClass('password')} placeholder="••••••••" />
+            </div>
+          </div>
+
+          <div className="pt-4">
+            <button type="submit" className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] uppercase tracking-[0.2em] text-xs bg-blue-600 shadow-blue-500/20">
+              {t.loginButton} &rarr;
+            </button>
+          </div>
+          
+          <div className="pt-8 mt-4 border-t border-slate-50 flex flex-col items-center space-y-6">
+            <div className="flex items-center space-x-6">
+              <button type="button" onClick={() => setShowImprint(true)} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-widest transition-colors">Impressum</button>
+              <span className="w-1.5 h-1.5 bg-slate-100 rounded-full" />
+              <button type="button" onClick={() => setShowPrivacy(true)} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-widest transition-colors">Datenschutz</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <p className="mt-8 text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-60">
+        &copy; {new Date().getFullYear()} Gourmetta Gastronomie GmbH
+      </p>
+
+      {(showImprint || showPrivacy) && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
+           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md" onClick={() => { setShowImprint(false); setShowPrivacy(false); }} />
+           <div className="relative bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl p-10 lg:p-14 overflow-hidden border border-white/10 flex flex-col max-h-[85vh]">
+              <div className="flex justify-between items-center mb-8 shrink-0">
+                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{showImprint ? 'Impressum' : 'Datenschutz'}</h2>
+                <button onClick={() => { setShowImprint(false); setShowPrivacy(false); }} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold hover:scale-110 transition-transform">✕</button>
+              </div>
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 whitespace-pre-wrap font-medium text-slate-600 text-sm leading-relaxed pb-6">
+                 {showImprint ? legalTexts.imprint : legalTexts.privacy}
+              </div>
+              <div className="mt-4 pt-8 border-t border-slate-50 shrink-0">
+                 <button onClick={() => { setShowImprint(false); setShowPrivacy(false); }} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest">Verstanden</button>
+              </div>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
