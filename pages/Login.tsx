@@ -83,7 +83,6 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
       return;
     }
 
-    // Standard login flow
     onLogin(cleanUsername, cleanPassword, true);
   };
 
@@ -109,14 +108,11 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
 
       <div className="w-full max-w-[460px] bg-white rounded-[3.5rem] shadow-2xl p-10 lg:p-14 border border-slate-100 relative z-10 flex flex-col">
         <div className="flex flex-col items-center mb-10">
-          <button type="button" onClick={requestNotificationPermission} className="w-20 h-20 mb-6 transition-all duration-500 hover:scale-110 active:scale-95 flex items-center justify-center">
+          <button type="button" onClick={requestNotificationPermission} className="w-16 h-16 mb-4 transition-all duration-500 hover:scale-110 active:scale-95 flex items-center justify-center">
             <img src={LOGO_URL} className={`w-full h-full object-contain ${notificationStatus === 'default' ? 'animate-pulse' : ''}`} alt="Logo" />
           </button>
-          <h1 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">gourmetta</h1>
-          <div className="mt-4 flex items-center space-x-2">
-             <div className={`w-2 h-2 rounded-full ${backendOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{backendOffline ? 'Offline Modus' : 'Cloud Sync Aktiv'}</span>
-          </div>
+          <h1 className="text-2xl font-black text-slate-900 italic tracking-tighter uppercase">gourmetta</h1>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">HACCP Management System</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6 flex-1">
@@ -133,7 +129,7 @@ export const Login: React.FC<LoginProps> = ({ t, currentLanguage, onLanguageChan
 
           <div className="pt-4">
             <button type="submit" className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] uppercase tracking-[0.2em] text-xs bg-blue-600 shadow-blue-500/20">
-              Einloggen &rarr;
+              System öffnen &rarr;
             </button>
           </div>
           
