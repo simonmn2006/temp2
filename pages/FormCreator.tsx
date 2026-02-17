@@ -6,9 +6,10 @@ interface FormCreatorPageProps {
   t: TranslationSet;
   forms: FormTemplate[];
   setForms: React.Dispatch<React.SetStateAction<FormTemplate[]>>;
+  onSync: (form: FormTemplate, del?: boolean) => void;
 }
 
-export const FormCreatorPage: React.FC<FormCreatorPageProps> = ({ t, forms, setForms }) => {
+export const FormCreatorPage: React.FC<FormCreatorPageProps> = ({ t, forms, setForms, onSync }) => {
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [editingForm, setEditingForm] = useState<FormTemplate | null>(null);
   const [previewForm, setPreviewForm] = useState<FormTemplate | null>(null);
@@ -124,6 +125,7 @@ export const FormCreatorPage: React.FC<FormCreatorPageProps> = ({ t, forms, setF
       setForms(prev => [...prev, newForm]);
       showAlert(`Formular "${builderTitle}" erstellt.`, 'success');
     }
+    onSync(newForm);
     setIsBuilderOpen(false);
   };
 
@@ -131,6 +133,7 @@ export const FormCreatorPage: React.FC<FormCreatorPageProps> = ({ t, forms, setF
     if (formToDelete) {
       const title = formToDelete.title;
       setForms(prev => prev.filter(f => f.id !== formToDelete.id));
+      onSync(formToDelete, true);
       showAlert(`Formular "${title}" gelöscht.`, 'success');
       setFormToDelete(null);
     }

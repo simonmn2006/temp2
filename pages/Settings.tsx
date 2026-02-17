@@ -29,7 +29,8 @@ export const SettingsPage: React.FC<{
   setExcludedFacilities: React.Dispatch<React.SetStateAction<FacilityException[]>>;
   legalTexts: { imprint: string; privacy: string };
   setLegalTexts: React.Dispatch<React.SetStateAction<{ imprint: string; privacy: string }>>;
-}> = ({ t, facilities, fridgeTypes, setFridgeTypes, cookingMethods, setCookingMethods, facilityTypes, setFacilityTypes, holidays, setHolidays, excludedFacilities, setExcludedFacilities, legalTexts, setLegalTexts }) => {
+  onSync: (type: string, data: any, del?: boolean) => void;
+}> = ({ t, facilities, fridgeTypes, setFridgeTypes, cookingMethods, setCookingMethods, facilityTypes, setFacilityTypes, holidays, setHolidays, excludedFacilities, setExcludedFacilities, legalTexts, setLegalTexts, onSync }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('holidays');
   const [alert, setAlert] = useState<{ msg: string; type: 'error' | 'success' } | null>(null);
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
@@ -120,11 +121,11 @@ export const SettingsPage: React.FC<{
   const executeDelete = () => {
     if (!pendingDelete) return;
     const { item, type } = pendingDelete;
-    if (type === 'holidays') setHolidays(prev => prev.filter(x => x.id !== item.id));
-    else if (type === 'cookingMethods') setCookingMethods(prev => prev.filter(x => x.id !== item.id));
-    else if (type === 'fridgeTypes') setFridgeTypes(prev => prev.filter(x => x.id !== item.id));
-    else if (type === 'facilityTypes') setFacilityTypes(prev => prev.filter(x => x.id !== item.id));
-    else if (type === 'excludedFacilities') setExcludedFacilities(prev => prev.filter(x => x.id !== item.id));
+    if (type === 'holidays') { setHolidays(prev => prev.filter(x => x.id !== item.id)); onSync('holidays', item, true); }
+    else if (type === 'cookingMethods') { setCookingMethods(prev => prev.filter(x => x.id !== item.id)); onSync('cooking_methods', item, true); }
+    else if (type === 'fridgeTypes') { setFridgeTypes(prev => prev.filter(x => x.id !== item.id)); onSync('fridge_types', item, true); }
+    else if (type === 'facilityTypes') { setFacilityTypes(prev => prev.filter(x => x.id !== item.id)); onSync('facility_types', item, true); }
+    else if (type === 'excludedFacilities') { setExcludedFacilities(prev => prev.filter(x => x.id !== item.id)); onSync('facility_exceptions', item, true); }
     showAlert(`"${item.name}" gelöscht.`, 'success');
     setPendingDelete(null);
   };
@@ -167,25 +168,30 @@ export const SettingsPage: React.FC<{
         if (!checkUniqueness(holidays, editingHoliday.name!, editingHoliday.id)) return;
         const item = { ...editingHoliday, id: editingHoliday.id || `H-${Date.now()}` } as Holiday;
         setHolidays(prev => editingHoliday.id ? prev.map(h => h.id === item.id ? item : h) : [...prev, item]);
+        onSync('holidays', item);
         setEditingHoliday(null);
     } else if (editingCooking) {
         if (!checkUniqueness(cookingMethods, editingCooking.name!, editingCooking.id)) return;
         const item = { ...editingCooking, id: editingCooking.id || `CM-${Date.now()}` } as CookingMethod;
         setCookingMethods(prev => editingCooking.id ? prev.map(m => m.id === item.id ? item : m) : [...prev, item]);
+        onSync('cooking_methods', item);
         setEditingCooking(null);
     } else if (editingFridge) {
         if (!checkUniqueness(fridgeTypes, editingFridge.name!, editingFridge.id)) return;
         const item = { ...editingFridge, id: editingFridge.id || `RT-${Date.now()}` } as RefrigeratorType;
         setFridgeTypes(prev => editingFridge.id ? prev.map(m => m.id === item.id ? item : m) : [...prev, item]);
+        onSync('fridge_types', item);
         setEditingFridge(null);
     } else if (editingFacilityType) {
         if (!checkUniqueness(facilityTypes, editingFacilityType.name!, editingFacilityType.id)) return;
         const item = { ...editingFacilityType, id: editingFacilityType.id || `FT-${Date.now()}` } as FacilityType;
         setFacilityTypes(prev => editingFacilityType.id ? prev.map(m => m.id === item.id ? item : m) : [...prev, item]);
+        onSync('facility_types', item);
         setEditingFacilityType(null);
     } else if (editingExcluded) {
         const item = { ...editingExcluded, id: editingExcluded.id || `EX-${Date.now()}` } as FacilityException;
         setExcludedFacilities(prev => editingExcluded.id ? prev.map(m => m.id === item.id ? item : m) : [...prev, item]);
+        onSync('facility_exceptions', item);
         setEditingExcluded(null);
     }
     
@@ -386,9 +392,8 @@ export const SettingsPage: React.FC<{
         </div>
       </div>
 
-      {/* --- DELETE CONFIRMATION --- */}
       {pendingDelete && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-[200] animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-200 animate-in fade-in duration-300">
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 shadow-2xl border border-rose-500/20 text-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-2 bg-rose-500" />
             <div className="w-20 h-20 bg-rose-50 dark:bg-rose-900/30 text-rose-600 rounded-full flex items-center justify-center text-4xl mx-auto mb-6">🗑️</div>
@@ -402,7 +407,6 @@ export const SettingsPage: React.FC<{
         </div>
       )}
 
-      {/* --- MODAL FOR EDITING --- */}
       {(editingHoliday || editingCooking || editingFridge || editingFacilityType || editingExcluded) && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
            <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[3.5rem] shadow-2xl overflow-hidden border border-white/10 text-left flex flex-col relative">

@@ -191,7 +191,7 @@ export const UserForms: React.FC<UserFormsProps> = ({ t, user, forms, assignment
         </div>
       ) : (
         <div className="bg-white min-h-[400px] rounded-[3.5rem] border-2 border-dashed border-slate-100 flex flex-col items-center justify-center p-12 text-center">
-          <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center text-4xl mb-6">🏆</div>
+          <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center text-4xl mb-6 shadow-inner">🏆</div>
           <h2 className="text-xl font-black text-slate-900 mb-2">Alles erledigt</h2>
           <p className="text-slate-500 font-medium">Es sind momentan keine weiteren Checklisten ausstehend.</p>
         </div>

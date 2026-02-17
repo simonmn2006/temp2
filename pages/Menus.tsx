@@ -6,9 +6,10 @@ interface MenusPageProps {
   t: TranslationSet;
   menus: Menu[];
   setMenus: React.Dispatch<React.SetStateAction<Menu[]>>;
+  onSync: (menu: Menu, del?: boolean) => void;
 }
 
-export const MenusPage: React.FC<MenusPageProps> = ({ t, menus, setMenus }) => {
+export const MenusPage: React.FC<MenusPageProps> = ({ t, menus, setMenus, onSync }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
   const [menuName, setMenuName] = useState('');
@@ -61,14 +62,17 @@ export const MenusPage: React.FC<MenusPageProps> = ({ t, menus, setMenus }) => {
 
     setInvalidFields(new Set());
 
+    let finalMenu: Menu;
     if (editingMenu) {
-      setMenus(prev => prev.map(m => m.id === editingMenu.id ? { ...m, name: trimmedName } : m));
+      finalMenu = { ...editingMenu, name: trimmedName };
+      setMenus(prev => prev.map(m => m.id === editingMenu.id ? finalMenu : m));
       showAlert(`Menü "${trimmedName}" aktualisiert.`, 'success');
     } else {
-      const newMenu: Menu = { id: `MNU-${Date.now().toString().substr(-5)}`, name: trimmedName };
-      setMenus(prev => [...prev, newMenu]);
+      finalMenu = { id: `MNU-${Date.now().toString().substr(-5)}`, name: trimmedName };
+      setMenus(prev => [...prev, finalMenu]);
       showAlert(`Menü "${trimmedName}" angelegt.`, 'success');
     }
+    onSync(finalMenu);
     setIsModalOpen(false);
   };
 
@@ -76,6 +80,7 @@ export const MenusPage: React.FC<MenusPageProps> = ({ t, menus, setMenus }) => {
     if (menuToDelete) {
       const name = menuToDelete.name;
       setMenus(prev => prev.filter(m => m.id !== menuToDelete.id));
+      onSync(menuToDelete, true);
       showAlert(`Menü "${name}" wurde gelöscht.`, 'success');
       setMenuToDelete(null);
     }

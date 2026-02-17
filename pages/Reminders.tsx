@@ -15,9 +15,10 @@ interface RemindersPageProps {
   reminders: ReminderConfig[];
   setReminders: React.Dispatch<React.SetStateAction<ReminderConfig[]>>;
   onLog: (action: AuditLog['action'], entity: string, details: string) => void;
+  onSync: (reminder: ReminderConfig, del?: boolean) => void;
 }
 
-export const RemindersPage: React.FC<RemindersPageProps> = ({ t, reminders, setReminders, onLog }) => {
+export const RemindersPage: React.FC<RemindersPageProps> = ({ t, reminders, setReminders, onLog, onSync }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState<ReminderConfig | null>(null);
   const [reminderToDelete, setReminderToDelete] = useState<ReminderConfig | null>(null);
@@ -49,11 +50,13 @@ export const RemindersPage: React.FC<RemindersPageProps> = ({ t, reminders, setR
   const handleSave = () => {
     if (!formData.label?.trim() || !formData.time) return;
 
+    let finalRem: ReminderConfig;
     if (editingReminder) {
-      setReminders((prev) => prev.map(r => r.id === editingReminder.id ? { ...r, ...formData } as ReminderConfig : r));
+      finalRem = { ...editingReminder, ...formData } as ReminderConfig;
+      setReminders((prev) => prev.map(r => r.id === editingReminder.id ? finalRem : r));
       onLog('UPDATE', 'REMINDERS', `Erinnerung "${formData.label}" aktualisiert`);
     } else {
-      const newRem: ReminderConfig = {
+      finalRem = {
         id: `rem-${Date.now()}`,
         label: formData.label,
         time: formData.time,
@@ -61,15 +64,17 @@ export const RemindersPage: React.FC<RemindersPageProps> = ({ t, reminders, setR
         days: formData.days ?? [],
         targetRoles: formData.targetRoles ?? ['User']
       };
-      setReminders((prev) => [...prev, newRem]);
+      setReminders((prev) => [...prev, finalRem]);
       onLog('CREATE', 'REMINDERS', `Neue Erinnerung "${formData.label}" erstellt`);
     }
+    onSync(finalRem);
     setIsModalOpen(false);
   };
 
   const confirmDelete = () => {
     if (reminderToDelete) {
       setReminders((prev) => prev.filter(r => r.id !== reminderToDelete.id));
+      onSync(reminderToDelete, true);
       onLog('DELETE', 'REMINDERS', `Erinnerung "${reminderToDelete.label}" gelöscht`);
       setReminderToDelete(null);
     }
@@ -123,7 +128,6 @@ export const RemindersPage: React.FC<RemindersPageProps> = ({ t, reminders, setR
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">24h</span>
                    </div>
                 </div>
-                {/* Fixed: Buttons are now always visible (removed opacity-0 group-hover:opacity-100) */}
                 <div className="flex flex-col space-y-2 relative z-10">
                    <button 
                     onClick={() => openModal(rem)} 
@@ -258,7 +262,6 @@ export const RemindersPage: React.FC<RemindersPageProps> = ({ t, reminders, setR
         </div>
       )}
 
-      {/* DELETE CONFIRMATION MODAL */}
       {reminderToDelete && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-[110] animate-in fade-in duration-300">
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 shadow-2xl border border-rose-500/20 text-center relative overflow-hidden">

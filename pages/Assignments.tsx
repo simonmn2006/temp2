@@ -36,9 +36,10 @@ interface AssignmentsPageProps {
   menus: Menu[];
   facilityTypes: FacilityType[];
   onTabChange: (tab: AdminTab) => void;
+  onSync: (assignment: Assignment, del?: boolean) => void;
 }
 
-export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments, setAssignments, users, facilities, forms, menus, facilityTypes, onTabChange }) => {
+export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments, setAssignments, users, facilities, forms, menus, facilityTypes, onTabChange, onSync }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [alertMsg, setAlertMsg] = useState<{ text: string, type: 'error' | 'success' | 'warning' } | null>(null);
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
@@ -49,7 +50,6 @@ export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments
   const [bulkDeleteGroup, setBulkDeleteGroup] = useState<{ type: string, id: string, name: string } | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
 
-  // Modal states for multi-selection
   const [modalTargetType, setModalTargetType] = useState<AssignmentTargetType>('user');
   const [modalTargetIds, setModalTargetIds] = useState<Set<string>>(new Set());
   const [modalResourceConfigs, setModalResourceConfigs] = useState<Record<string, ResourceConfig>>({});
@@ -59,7 +59,6 @@ export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments
   const [modalSkipWeekend, setModalSkipWeekend] = useState(true);
   const [modalSkipHolidays, setModalSkipHolidays] = useState(true);
 
-  // Search states for modal
   const [targetSearch, setTargetSearch] = useState('');
   const [formSearch, setFormSearch] = useState('');
   const [menuSearch, setMenuSearch] = useState('');
@@ -186,15 +185,17 @@ export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments
 
     if (editingAssignment) {
       const config = modalResourceConfigs[editingAssignment.resourceId];
-      setAssignments(prev => prev.map(a => a.id === editingAssignment.id ? {
-        ...a,
+      const updated: Assignment = {
+        ...editingAssignment,
         frequency: config.frequency,
         frequencyDay: config.day,
         startDate: modalStartDate,
         endDate: modalEndDate,
         skipWeekend: modalSkipWeekend,
         skipHolidays: modalSkipHolidays
-      } : a));
+      };
+      setAssignments(prev => prev.map(a => a.id === editingAssignment.id ? updated : a));
+      onSync(updated);
       showAlert("Zuweisung aktualisiert.", 'success');
       setEditingAssignment(null);
     } else {
@@ -217,7 +218,7 @@ export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments
             return;
           }
 
-          newAssignments.push({
+          const item: Assignment = {
             id: `A-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
             targetType: modalTargetType,
             targetId,
@@ -229,7 +230,9 @@ export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments
             endDate: modalEndDate,
             skipWeekend: modalSkipWeekend,
             skipHolidays: modalSkipHolidays
-          } as Assignment);
+          };
+          newAssignments.push(item);
+          onSync(item);
         });
       });
 
@@ -252,6 +255,7 @@ export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments
   const confirmDelete = () => {
     if (assignmentToDelete) {
       setAssignments(prev => prev.filter(a => a.id !== assignmentToDelete.id));
+      onSync(assignmentToDelete, true);
       showAlert("Zuweisung wurde entfernt.", 'success');
       setAssignmentToDelete(null);
     }
@@ -259,7 +263,9 @@ export const AssignmentsPage: React.FC<AssignmentsPageProps> = ({ t, assignments
 
   const confirmBulkDelete = () => {
     if (bulkDeleteGroup) {
+      const toDelete = assignments.filter(a => a.targetType === bulkDeleteGroup.type && a.targetId === bulkDeleteGroup.id);
       setAssignments(prev => prev.filter(a => !(a.targetType === bulkDeleteGroup.type && a.targetId === bulkDeleteGroup.id)));
+      toDelete.forEach(a => onSync(a, true));
       showAlert(`Alle Zuweisungen für ${bulkDeleteGroup.name} wurden entfernt.`, 'success');
       setBulkDeleteGroup(null);
     }
